@@ -151,14 +151,37 @@ struct AttentionEngineTests {
         // The user is reading, not touching anything: the done card waits for them.
         _ = engine.receive(moment("landing", .finished, "Live on preview"), presence: presence(idle: 10, key: 60), now: at(0))
         #expect(engine.current?.title == "landing done")
-        _ = engine.receive(moment("db", .failed, "Staging DB refused", at: 8), presence: presence(idle: 18, key: 60), now: at(8))
-        // The user comes back and starts typing.
         var shown: [String] = []
+        for case .show(let card) in engine.receive(moment("db", .failed, "Staging DB refused", at: 8), presence: presence(idle: 18, key: 60), now: at(8)) {
+            shown.append(card.title)
+        }
+        // The user comes back and starts typing.
         for step in 0..<200 {
             let t = 20 + Double(step) * 0.2
             for case .show(let card) in engine.tick(presence: presence(idle: 0.1, key: 0.1), now: at(t)) { shown.append(card.title) }
         }
         #expect(shown == ["db failed"])
+    }
+
+    @Test("A failure takes the pointer from a done card that waits for the user")
+    func failurePreemptsNews() {
+        var engine = AttentionEngine()
+        _ = engine.receive(moment("landing", .finished, "Live on preview"), presence: presence(idle: 10), now: at(0))
+        let effects = engine.receive(moment("db", .failed, "Staging DB refused", at: 10), presence: presence(idle: 20), now: at(10))
+        #expect(effects.first.isHide(.preempted))
+        guard case .show(let card)? = effects.last else { Issue.record("expected the failure card"); return }
+        #expect(card.title == "db failed")
+        // The done card had its time, so it doesn't come back.
+        #expect(engine.queue.isEmpty)
+    }
+
+    @Test("A preempted card that barely showed comes back afterwards")
+    func preemptedCardReturns() {
+        var engine = AttentionEngine()
+        _ = engine.receive(moment("landing", .finished), presence: presence(), now: at(0))
+        _ = engine.receive(moment("web", .needsYou, "Wants to run npm install", at: 1), presence: presence(), now: at(1))
+        #expect(engine.current?.title == "web needs you")
+        #expect(engine.queue.first?.moment.agentLabel == "landing")
     }
 
     @Test("Resolving a blocked agent removes its card")

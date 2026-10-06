@@ -13,6 +13,7 @@ All notable changes to Moonlet are listed here. The format follows [Keep a Chang
 - Few-word summaries from a local Ollama model, with question detection.
 - Stuck-agent detection and learning which projects you always skip.
 - Claude Code hooks and Codex `notify` integrations, the `moonlet` command, and wire protocol v1.
+- Urgent cards (failures, questions, permission requests) take the pointer from less urgent ones instead of waiting behind them.
 - **Preview the pointer (20 seconds)** in the menu, to see the Moonlet pointer and check clicks without waiting for an agent.
 - Cards for blocked agents say what the agent wants (`Wants to run npm install`) or show its question with the options, and stay 8 seconds.
 

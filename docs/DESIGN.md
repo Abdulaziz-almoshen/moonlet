@@ -64,6 +64,7 @@ queued ──(not typing, not in a call, not away)──▶ shown at the pointer
 - **If nobody touched anything** while it showed, it doesn't count as seen; it keeps waiting.
 - **Away for 2 minutes:** the card leaves unseen, and everything that happened while you were gone becomes one summary (`While you were away · 1 needs you · 2 done`).
 - **Calls** hold everything; one summary follows the call.
+- **Urgent news cuts in:** a failure, question, or permission request takes the pointer from a less urgent card. A card that already showed for its full time counts as seen; otherwise it comes back afterwards.
 - **Blocked agents come back:** a reminder at 2, 10, and 30 minutes (`still needs you · Waiting 12 min`), then silence.
 - **Typing patience:** a blocked agent waits at most 3 s for a pause in your typing; everything else waits up to 10 s.
 

@@ -61,6 +61,8 @@ public enum HideReason: Sendable, Equatable {
     case wentAway
     /// A call started; the card returns when the call ends.
     case callStarted
+    /// More urgent news took the pointer; the card returns later unless it already had its time.
+    case preempted
 }
 
 /// What the app should do in response to an engine update.
@@ -242,16 +244,32 @@ public struct AttentionEngine: Sendable {
     }
 
     private mutating func deliver(_ presence: PresenceSnapshot, _ now: Date) -> [AttentionEffect] {
-        guard current == nil, !queue.isEmpty, !presence.inCall else { return [] }
+        guard !queue.isEmpty, !presence.inCall else { return [] }
         let level = config.presence.level(of: presence)
         guard level != .away else { return [] }
         queue.sort { ($0.moment.kind.priority, $0.moment.createdAt) < ($1.moment.kind.priority, $1.moment.createdAt) }
 
+        // Urgent news doesn't wait behind good news: a failure or a request takes the
+        // pointer from a less urgent card. A card that already had its time counts as seen.
         if config.presence.isTyping(presence) {
             let since = queue[0].deferredSince ?? now
             queue[0].deferredSince = since
             let patience = config.typingPatience[queue[0].moment.kind] ?? 10
             if now.timeIntervalSince(since) < patience { return [] }
+        }
+
+        var effects: [AttentionEffect] = []
+        if let card = current {
+            guard queue[0].moment.kind.priority < card.tone.priority else { return [] }
+            current = nil
+            if now.timeIntervalSince(card.shownAt) >= config.hold {
+                remember(card.moments)
+            } else {
+                for moment in card.moments where !queue.contains(where: { $0.moment.agentID == moment.agentID }) {
+                    queue.append(Pending(moment: moment, arrivedWhileAbsent: false))
+                }
+            }
+            effects.append(.hide(card, .preempted))
         }
 
         var card: Card
@@ -273,7 +291,7 @@ public struct AttentionEngine: Sendable {
         let hold = card.tone.isBlocking ? config.blockingHold : config.hold
         card.deadline = level == .active ? now.addingTimeInterval(hold) : nil
         current = card
-        return [.show(card)]
+        return effects + [.show(card)]
     }
 
     private mutating func requeue(_ card: Card) {
