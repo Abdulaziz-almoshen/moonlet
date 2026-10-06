@@ -27,7 +27,11 @@ final class PointerSkin {
     private(set) var suspendedReason: String?
     private let window: NSPanel
     private let artwork = CALayer()
-    private var displayLink: CADisplayLink?
+    /// Keeps the skin in place and checks the system cursor; mouse events move it in between.
+    private var timer: Timer?
+    /// True while the screen sleeps or the session is locked: nothing may be drawn.
+    private var paused = false
+    private var observers: [NSObjectProtocol] = []
     private var arrow: (size: CGSize, hotSpot: CGPoint)?
     private var canvasPoints: CGFloat = 42
     private var lastArrowRefresh = Date.distantPast
@@ -54,10 +58,11 @@ final class PointerSkin {
         window.contentView = host
         isAvailable = SkyLight.allowCursorControlInBackground()
         guardian.start()
+        watchSleepAndDisplays()
     }
 
     /// Whether the skin is drawing right now, with the real arrow hidden.
-    var isDrawing: Bool { displayLink != nil && window.isVisible }
+    var isDrawing: Bool { timer != nil && window.isVisible }
 
     /// Why the skin isn't drawing right now, or `nil` while it is.
     var whyNotDrawing: String? {
@@ -66,7 +71,8 @@ final class PointerSkin {
         if !isEnabled { return "turned off in Settings" }
         if !isAvailable { return "macOS didn't let Moonlet hide the pointer from the background" }
         if let suspendedReason { return "paused: \(suspendedReason)" }
-        if displayLink == nil { return "not following the mouse" }
+        if paused { return "the screen is asleep or locked" }
+        if timer == nil { return "not following the mouse" }
         if !arrowShowing { return "the pointer isn't the plain arrow here, or you're typing" }
         return "its window isn't on screen"
     }
@@ -130,40 +136,98 @@ final class PointerSkin {
 
     // MARK: - Following the mouse
 
+    /// Follows on two drivers that don't depend on the display's refresh, which pauses
+    /// while the screen sleeps: every mouse movement (see `pointerMoved()`), and a 60 Hz
+    /// timer that keeps the skin exactly on the mouse and checks the system cursor.
     private func startFollowing() {
-        guard displayLink == nil, let screen = NSScreen.main else { return }
-        let link = screen.displayLink(target: self, selector: #selector(step(_:)))
-        link.add(to: .main, forMode: .common)
-        displayLink = link
+        guard timer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.step() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
         lastShapeCheck = 0
+        step()
     }
 
     private func stopFollowing() {
-        displayLink?.invalidate()
-        displayLink = nil
+        timer?.invalidate()
+        timer = nil
         window.orderOut(nil)
         guardian.restore()
     }
 
-    @objc private func step(_ link: CADisplayLink) {
+    /// Moves the skin with the mouse between timer ticks.
+    func pointerMoved() {
+        guard timer != nil, !paused, arrowShowing, window.isVisible else { return }
+        place()
+    }
+
+    private func step() {
         guardian.heartbeat()
+        let now = CACurrentMediaTime()
         // Checking what the system is drawing costs a little, so do it 20 times a second.
-        if link.timestamp - lastShapeCheck > 0.05 {
-            lastShapeCheck = link.timestamp
+        if now - lastShapeCheck > 0.05 {
+            lastShapeCheck = now
             arrowShowing = systemShowsArrow() && !hiddenWhileTyping()
         }
-        guard arrowShowing else {
+        guard arrowShowing, !paused, CGDisplayIsAsleep(CGMainDisplayID()) == 0 else {
             if window.isVisible { window.orderOut(nil) }
             guardian.restore()
             return
         }
+        place()
+        if !window.isVisible { window.orderFrontRegardless() }
+        guardian.conceal()
+    }
+
+    /// Puts the artwork's tip exactly on the mouse.
+    private func place() {
         let mouse = NSEvent.mouseLocation
         let unit = canvasPoints / PointerArtwork.canvas
         let origin = NSPoint(x: mouse.x - PointerArtwork.hotSpot.x * unit,
                              y: mouse.y - (PointerArtwork.canvas - PointerArtwork.hotSpot.y) * unit)
         if window.frame.origin != origin { window.setFrameOrigin(origin) }
-        if !window.isVisible { window.orderFrontRegardless() }
-        guardian.conceal()
+    }
+
+    /// Hides the skin while the screen sleeps or the session is locked, and starts
+    /// over cleanly on wake, unlock, or any display change.
+    private func watchSleepAndDisplays() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        let pausing = [NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification,
+                       NSWorkspace.sessionDidResignActiveNotification]
+        let resuming = [NSWorkspace.screensDidWakeNotification, NSWorkspace.didWakeNotification,
+                        NSWorkspace.sessionDidBecomeActiveNotification]
+        for name in pausing {
+            observers.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setPaused(true) }
+            })
+        }
+        for name in resuming {
+            observers.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setPaused(false) }
+            })
+        }
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.restartFollowing() }
+        })
+    }
+
+    private func setPaused(_ value: Bool) {
+        paused = value
+        if value {
+            window.orderOut(nil)
+            guardian.restore()
+        } else {
+            restartFollowing()
+        }
+    }
+
+    private func restartFollowing() {
+        stopFollowing()
+        lastArrowRefresh = .distantPast
+        refresh()
     }
 
     /// Whether the app under the pointer is showing the ordinary arrow.

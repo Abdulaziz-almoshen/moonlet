@@ -260,7 +260,10 @@ final class AppModel {
         skin.isEnabled = settings.pointerSkin
         // The pointer speaks only while an agent talks to you: the card at the pointer
         // sets its color, and an unanswered question keeps it yellow. Silent work never changes it.
-        let waitingOnUser = !blocked.isEmpty || !pendingQuestions.isEmpty
+        // A question keeps the pointer yellow for up to 10 minutes; after that only its
+        // reminder cards bring the color back, so an ignored question can't hold it forever.
+        let recentWait = engine.blockedAgents.contains { now.timeIntervalSince($0.since) < 600 }
+        let waitingOnUser = recentWait || !pendingQuestions.isEmpty
         let tint = pointer.tint(card: engine.current?.tone, waitingOnUser: waitingOnUser, now: now)
         if tint != skin.tint { Self.debug("pointer \(tint.rawValue)") }
         skin.tint = tint
@@ -357,6 +360,8 @@ final class AppModel {
     // MARK: - Pointer and summon
 
     private func pointerMoved(_ point: CGPoint, time: TimeInterval, buttonsDown: Bool) {
+        skin.pointerMoved()
+        cards.pointerMoved()
         if summon.isOpen {
             summon.pointerMoved(to: point)
             return

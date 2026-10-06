@@ -21,3 +21,5 @@ All notable changes to Moonlet are listed here. The format follows [Keep a Chang
 
 - The pointer skin could swallow clicks and scrolls: its window sat at the cursor level, above the screen-shield band. It now uses the accessibility overlay level, and turns itself off if input ever stops reaching your apps.
 - The pointer's hotspot now sits at the arrow's visible tip.
+- The drawn pointer and cards could freeze on screen after the display slept. They now follow mouse events and a timer instead of the display's refresh, hide while the screen sleeps or is locked, and restart on wake.
+- An unanswered question no longer keeps the pointer yellow indefinitely; after 10 minutes only its reminders color it.

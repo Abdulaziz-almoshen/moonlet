@@ -82,7 +82,7 @@ The pointer changes only while an agent talks to you. Silent work never changes 
 | --- | --- |
 | Nobody, including while agents work | Standard macOS arrow |
 | A card tells you something, such as a finished task | Blue while the card shows |
-| An agent asks you something: a question or a permission request | Yellow until you answer |
+| An agent asks you something: a question or a permission request | Yellow until you answer, for up to 10 minutes; after that, only its reminder cards bring yellow back |
 | A card reports a failure or a stuck agent | Red while the card shows |
 | A quick task you just watched finish | A brief blue flash, no card |
 

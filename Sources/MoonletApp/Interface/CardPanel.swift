@@ -15,7 +15,7 @@ final class CardPanel {
 
     private let panel: NSPanel
     private let host: NSHostingView<CardView>
-    private var displayLink: CADisplayLink?
+    private var timer: Timer?
     private var leaving = false
     private(set) var card: Card?
 
@@ -79,19 +79,25 @@ final class CardPanel {
 
     // MARK: - Riding with the pointer
 
+    /// A 60 Hz timer, not the display's refresh, so a card never freezes after the
+    /// screen sleeps; mouse movements move it in between (see `pointerMoved()`).
     private func startFollowing() {
-        guard displayLink == nil, let screen = NSScreen.main else { return }
-        let link = screen.displayLink(target: self, selector: #selector(step))
-        link.add(to: .main, forMode: .common)
-        displayLink = link
+        guard timer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.follow() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func stopFollowing() {
-        displayLink?.invalidate()
-        displayLink = nil
+        timer?.invalidate()
+        timer = nil
     }
 
-    @objc private func step() {
+    /// Moves the card with the mouse between timer ticks.
+    func pointerMoved() {
+        guard timer != nil, !leaving else { return }
         follow()
     }
 
