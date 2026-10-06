@@ -1,0 +1,11 @@
+ext":"cut off by the tail read"}]}}
+{"type":"user","uuid":"u1","sessionId":"s","message":{"role":"user","content":"Fix the flaky login test"}}
+{"type":"assistant","uuid":"a1","sessionId":"s","message":{"id":"msg_01A","role":"assistant","content":[{"type":"thinking","thinking":"Look at the view model first.","signature":"sig"}]}}
+{"type":"assistant","uuid":"a2","sessionId":"s","message":{"id":"msg_01A","role":"assistant","content":[{"type":"text","text":"Let me run the tests."}]}}
+{"type":"assistant","uuid":"a3","sessionId":"s","message":{"id":"msg_01A","role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"swift test"}}]}}
+{"type":"user","uuid":"u2","sessionId":"s","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"{\"type\":\"assistant\"} appears inside a tool result"}]},"toolUseResult":{"stdout":"ok","stderr":""}}
+{"type":"assistant","uuid":"a4","sessionId":"s","message":{"id":"msg_01B","role":"assistant","content":[{"type":"text","text":"Fixed the race in `LoginViewModel`."}]}}
+{"type":"assistant","uuid":"a5","sessionId":"s","message":{"id":"msg_01B","role":"assistant","content":[{"type":"text","text":"All 128 tests pass."}]}}
+{"type":"assistant","uuid":"a6","sessionId":"s","isSidechain":true,"message":{"id":"msg_side","role":"assistant","content":[{"type":"text","text":"Subagent notes."}]}}
+{"type":"assistant","uuid":"a7","sessionId":"s","isApiErrorMessage":true,"message":{"id":"msg_err","role":"assistant","content":[{"type":"text","text":"API Error: overloaded"}]}}
+{"type":"system","uuid":"y1","sessionId":"s","subtype":"stop_hook_summary","content":"Hooks ran"}

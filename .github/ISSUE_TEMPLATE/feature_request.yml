@@ -1,0 +1,25 @@
+name: Idea
+description: Suggest a feature or a new agent integration.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The moment you want to improve
+      description: Describe the situation, not the solution. When did Moonlet interrupt you, or stay quiet, at the wrong time?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Attention rules (when cards appear and leave)
+        - Pointer look
+        - Summon view
+        - New agent integration
+        - Something else

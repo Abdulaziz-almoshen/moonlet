@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in Moonlet doesn't work as described.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce
+      placeholder: |
+        1. Start two Claude Code sessions in iTerm
+        2. Let one finish while typing in another app
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: macOS 26.3
+    validations:
+      required: true
+  - type: input
+    id: agents
+    attributes:
+      label: Agents and where they run
+      placeholder: Claude Code 2.1 in iTerm, Codex CLI in Terminal
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `moonlet doctor`
+      render: text
+  - type: textarea
+    id: log
+    attributes:
+      label: Debug log (optional)
+      description: Run `MOONLET_DEBUG=1 /Applications/Moonlet.app/Contents/MacOS/Moonlet` and paste the relevant lines. Remove anything private.
+      render: text
