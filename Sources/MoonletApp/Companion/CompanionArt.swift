@@ -431,7 +431,8 @@ private enum Ink {
     static let water = rgb(0x9AD8F7)
     static let violet = rgb(0xB69CFF)
     static let yellow = rgb(0xFFC53D)
-    static let alarm = rgb(0xFF453A)
+    /// The nervous sign: orange, since red means something went wrong.
+    static let alarm = rgb(0xFF9F0A)
     static let info = rgb(0x5EC0E8)
     static let cloud = rgb(0xC3C8D0)
     static let confetti = [0x5EC0E8, 0xFFC53D, 0xFF8FA3, 0x7BD389, 0xB69CFF].map { rgb($0) }

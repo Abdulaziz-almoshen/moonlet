@@ -2,7 +2,8 @@ import AppKit
 import MoonletBrain
 import SwiftUI
 
-/// Renders the real interface to PNGs for the documentation:
+/// Renders the real interface to PNGs for the documentation, the companion's
+/// sheets included:
 ///
 ///     swift run MoonletApp --render-docs docs/images
 ///
@@ -19,7 +20,7 @@ enum DocsRenderer {
                 write(summonSheet(dark: dark), to: directory.appendingPathComponent("summon-\(suffix).png"))
             }
         }
-        write(pointerSheet(), to: directory.appendingPathComponent("pointer-states.png"))
+        CompanionSheet.render(to: directory)
         print("Rendered documentation images to \(directory.path)")
     }
 
@@ -112,29 +113,6 @@ enum DocsRenderer {
                 }
             }
         }
-    }
-
-    /// The three talking colors on a light row and a dark row: blue tells, yellow asks, red warns.
-    private static func pointerSheet() -> CGImage? {
-        let colors = [Palette.info, Palette.needsYou, Palette.problem]
-        let cell: CGFloat = 84
-        let size = CGSize(width: cell * CGFloat(colors.count) + 24, height: cell * 2 + 24)
-        guard let context = CGContext(data: nil, width: Int(size.width * 2), height: Int(size.height * 2), bitsPerComponent: 8,
-                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.scaleBy(x: 2, y: 2)
-        context.setFillColor(CGColor(gray: 0.12, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: size.width, height: cell + 12))
-        context.setFillColor(CGColor(gray: 0.97, alpha: 1))
-        context.fill(CGRect(x: 0, y: cell + 12, width: size.width, height: cell + 12))
-        for (index, color) in colors.enumerated() {
-            guard let image = PointerArtwork.image(color: color, points: 64, scale: 2) else { continue }
-            for row in 0..<2 {
-                let origin = CGPoint(x: 12 + CGFloat(index) * cell + 10, y: 12 + CGFloat(row) * (cell + 12) + 10)
-                context.draw(image, in: CGRect(origin: origin, size: CGSize(width: 64, height: 64)))
-            }
-        }
-        return context.makeImage()
     }
 
     private static func summonSheet(dark: Bool) -> CGImage? {

@@ -99,7 +99,7 @@ final class CompanionDirector {
 
     static func mood(of card: Card) -> CompanionMood {
         let detail = card.isDigest ? card.moments.map(\.detail).joined(separator: " ") : card.detail
-        return CompanionMood.read(kind: card.tone, title: card.title, detail: detail)
+        return CompanionMood.read(kind: card.tone, detail: detail)
     }
 
     // MARK: - Scenes

@@ -15,10 +15,10 @@ All notable changes to Moonlet are listed here. The format follows [Keep a Chang
 - Claude Code hooks and Codex `notify` integrations, the `moonlet` command, and wire protocol v1.
 - Urgent cards (failures, questions, permission requests) take the pointer from less urgent ones instead of waiting behind them.
 - **Preview the pointer (20 seconds)** in the menu, to see the Moonlet pointer and check clicks without waiting for an agent.
-- Cards for blocked agents say what the agent wants (`Wants to run npm install`) or show its question with the options, and stay 8 seconds.
-- The companion: a tiny moon that pops out of the pointer with each card, makes a face that fits what the agent said (celebrating a deploy, cheeky about a typo, nervous about `rm -rf`, teary about a failure), and fades once the talk is over. Every appearance varies, with an occasional surprise. Turn it off in Settings.
-- Request cards park in place and take a click, which opens the agent's tab, so you never chase them; they catch up if you move far away.
-- The summon view shows every agent as a little companion: agents that need you sit closest to the middle, each lit like a moon by its progress, with a Next up card, finish estimates, a one-hour timeline, and keys 1–9, Return, and Esc.
+- Cards for blocked agents say what the agent wants (`Wants to run npm install`) or show its question with the options, and stay 8 seconds while you're active.
+- The companion: a tiny moon that pops out of the pointer with each card, makes a face that fits what the agent said (celebrating a deploy, cheeky about a typo, nervous about `rm -rf` with an orange **!** sign, teary about a failure, worried when finished work reports a problem), and fades when the card goes. It never comes out without a card and stays on the pointer's screen. Every appearance varies, with an occasional surprise; Reduce Motion keeps it still. Turn it off in Settings to get the cards exactly as before.
+- Request cards stop in place while they show, so you never chase them, and a click on one opens the agent's tab. They take a click only on the card itself, once the pointer rests on it, and never get in the way of a scroll. Answer the agent while its card shows and the companion thanks you; otherwise the card fades like any other, and the reminders bring it back.
+- The summon view shows every agent as a little companion: agents that need you sit closest to the middle, each lit like a moon by its progress, with a Next up card, finish estimates, and a timeline of the last hour. Opened from the keyboard, it takes 1–9, Return, and Esc, and any other key closes it; opened with a circle, it never takes your typing.
 
 ### Fixed
 

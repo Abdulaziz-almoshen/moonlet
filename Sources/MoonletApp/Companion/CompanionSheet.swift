@@ -2,7 +2,8 @@ import AppKit
 import MoonletBrain
 
 /// Renders every face and mood of the companion to PNGs, for checking the art
-/// against the design and for the documentation:
+/// against the design and for the documentation. `--render-docs` writes them
+/// with the other docs images; this writes only these:
 ///
 ///     swift run MoonletApp --render-companion docs/images
 @MainActor

@@ -34,6 +34,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--render-docs") {
     exit(0)
 }
 
+// Only the companion's sheets, which `--render-docs` also writes.
 if let index = CommandLine.arguments.firstIndex(of: "--render-companion") {
     let directory = CommandLine.arguments.dropFirst(index + 1).first ?? "docs/images"
     MainActor.assumeIsolated { CompanionSheet.render(to: URL(fileURLWithPath: directory)) }
