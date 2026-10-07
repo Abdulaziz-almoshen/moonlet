@@ -30,6 +30,9 @@ final class CompanionDirector {
 
     /// Points per rig unit at actual size: a body about 23 points across.
     static let scale: CGFloat = 1.15
+    /// Where the companion rides relative to the pointer's tip, in points, y down:
+    /// just past the arrow's tail, so it never covers the tip or the arrow.
+    static let pointerOffset = CGVector(dx: 20, dy: 28)
     /// The card's transparent margin around its visible box (`CardView` padding).
     private static let cardInset: CGFloat = 10
 
@@ -237,7 +240,7 @@ final class CompanionDirector {
             let distance = hypot(mouse.x - center.x, mouse.y - center.y)
             park.away = distance > 260 ? park.away + dt : 0
             if park.away > 0.9 {
-                park.target = cardOrigin(forCompanionAt: CGPoint(x: mouse.x + 17, y: mouse.y - 24), size: size)
+                park.target = cardOrigin(forCompanionAt: CGPoint(x: mouse.x + Self.pointerOffset.dx, y: mouse.y - Self.pointerOffset.dy), size: size)
                 park.away = 0
                 s.hopAt = s.t
             }
@@ -256,7 +259,7 @@ final class CompanionDirector {
         let inset = Self.cardInset
         let target = parked
             ? CGPoint(x: s.park!.origin.x + inset + 1, y: s.park!.origin.y + size.height - inset - 1)
-            : CGPoint(x: mouse.x + 17, y: mouse.y - 24)
+            : CGPoint(x: mouse.x + Self.pointerOffset.dx, y: mouse.y - Self.pointerOffset.dy)
         if reduceMotion {
             position = target
             velocity = .zero

@@ -18,6 +18,9 @@ enum DemoFilm {
     static let duration: Double = 26
     /// Moonlet's pointer and cards are drawn larger than life so they read in a small GIF.
     static let zoom: CGFloat = 1.6
+    /// The film's pointer is 42 points across before zoom, about 2.2 times a real one,
+    /// so the companion's size and its distances from the pointer scale by the same.
+    static let companionZoom: CGFloat = 2.2
 
     // MARK: - Rendering
 
@@ -80,7 +83,6 @@ enum DemoFilm {
         (0.0, CGPoint(x: 640, y: 430)), (1.4, CGPoint(x: 360, y: 205)), (2.8, CGPoint(x: 330, y: 245)),
         (4.4, CGPoint(x: 930, y: 215)), (5.8, CGPoint(x: 380, y: 560)), (7.0, CGPoint(x: 960, y: 560)),
         (8.2, CGPoint(x: 640, y: 440)), (9.6, CGPoint(x: 560, y: 410)), (10.6, CGPoint(x: 548, y: 404)),
-        (11.7, CGPoint(x: 700, y: 400)), (12.0, CGPoint(x: 700, y: 400)),
         (12.9, CGPoint(x: 560, y: 350)), (15.6, CGPoint(x: 572, y: 356)), (16.0, CGPoint(x: 600, y: 380)),
         (18.6, CGPoint(x: 590, y: 386)), (18.9, CGPoint(x: 598, y: 380)),
     ]
@@ -95,6 +97,14 @@ enum DemoFilm {
             return CGPoint(x: circleCenter.x + circleRadius * cos(angle), y: circleCenter.y + circleRadius * sin(angle))
         }
         if t >= Timeline.summon { return CGPoint(x: circleCenter.x + circleRadius, y: circleCenter.y) }
+        // The pointer goes to the parked card, clicks its "Open in Terminal", and moves on.
+        if t >= 10.6, t < 12.9 {
+            let from = t < 12.0 ? path.first { $0.0 == 10.6 }!.1 : askClickPoint
+            let to = t < 12.0 ? askClickPoint : path.first { $0.0 == 12.9 }!.1
+            let x = t < 12.0 ? min(1, (t - 10.6) / 1.1) : (t - 12.0) / 0.9
+            let eased = x < 0.5 ? 4 * x * x * x : 1 - pow(-2 * x + 2, 3) / 2
+            return CGPoint(x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased)
+        }
         guard let next = path.firstIndex(where: { $0.0 > t }) else { return path.last!.1 }
         guard next > 0 else { return path[0].1 }
         let (t0, p0) = path[next - 1]
@@ -130,13 +140,20 @@ enum DemoFilm {
     private static func companionCenter(at t: Double) -> CGPoint {
         let time = t >= Timeline.park && t < Timeline.tell ? Timeline.park : t
         let lagged = pointer(at: max(0, time - 0.1))
-        return CGPoint(x: lagged.x + 17 * zoom, y: lagged.y + 24 * zoom)
+        return CGPoint(x: lagged.x + CompanionDirector.pointerOffset.dx * companionZoom, y: lagged.y + CompanionDirector.pointerOffset.dy * companionZoom)
     }
 
     /// Where the card's image goes for a companion at `point`: its visible box
-    /// starts right of the companion and a little above it.
+    /// starts right of the companion and a little above it, as in the app. The
+    /// image has a transparent margin of 10 points, drawn at the card's zoom.
     private static func cardOrigin(companion point: CGPoint) -> CGPoint {
-        CGPoint(x: point.x + 12 * zoom, y: point.y - 30 * zoom)
+        CGPoint(x: point.x + 22 * companionZoom - 10 * zoom, y: point.y - 20 * companionZoom - 10 * zoom)
+    }
+
+    /// The parked request card's "Open in Terminal" line, where the pointer clicks.
+    private static var askClickPoint: CGPoint {
+        let card = cardOrigin(companion: companionCenter(at: Timeline.park))
+        return CGPoint(x: card.x + 100 * zoom, y: card.y + 58 * zoom)
     }
 
     /// The companion's look at `t`, scripted like the app's director plays it:
@@ -204,7 +221,7 @@ enum DemoFilm {
               let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
         context.setAlpha(alpha)
-        CompanionArt.draw(pose, in: context, center: companionCenter(at: t), scale: CompanionDirector.scale * zoom * max(0.01, grow), flipped: true)
+        CompanionArt.draw(pose, in: context, center: companionCenter(at: t), scale: CompanionDirector.scale * companionZoom * max(0.01, grow), flipped: true)
         context.restoreGState()
     }
 
@@ -472,17 +489,10 @@ enum DemoFilm {
                     }
                 }
             }
-            let rows = [
-                AgentRow(id: "a", label: "landing-page", place: "Terminal", activity: .working, progress: 0.7, status: "Installing packages", since: now.addingTimeInterval(-300)),
-                AgentRow(id: "b", label: "db-migration", place: "Terminal", activity: .failed, progress: nil, status: "Staging DB refused connection", since: now.addingTimeInterval(-30)),
-                AgentRow(id: "c", label: "api-refactor", place: "iTerm", activity: .done, progress: 1, status: "Pagination shipped, 14 tests pass", since: now.addingTimeInterval(-120)),
-                AgentRow(id: "d", label: "docs-site", place: "VS Code", activity: .working, progress: 0.4, status: "Writing docs/orders.md", since: now.addingTimeInterval(-600)),
-            ]
-            if let image = Self.snapshot(SummonView(content: SummonContent(agents: rows), actions: .init())) {
+            if let image = Self.snapshot(SummonView(content: DocsRenderer.sampleSummon(), actions: .init())) {
                 summon = image
                 summonSize = CGSize(width: CGFloat(image.width) / 3, height: CGFloat(image.height) / 3)
-                // The orbit's center inside the view: outer padding, inner padding, half the orbit.
-                summonAnchor = CGPoint(x: 12 + 14 + SummonView.orbitSize / 2, y: 12 + 14 + SummonView.orbitSize / 2)
+                summonAnchor = SummonView.wellCenter
             }
             if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") ?? URL(string: "file://" + FileManager.default.currentDirectoryPath + "/Packaging/AppIcon.icns"),
                let image = NSImage(contentsOf: url) {

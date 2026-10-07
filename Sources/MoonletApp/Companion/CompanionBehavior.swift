@@ -183,7 +183,7 @@ struct MoodPerformance {
                 Entrance(duration: 1.6) { p, c in
                     c.expression = p < 0.6 ? .surprised : .sleepy; let a = sin(min(max(p * 1.5, 0), 1) * pi); c.armLeft = 140 * a; c.armRight = -140 * a
                 },
-            ], pool: [.yawn, .lookAtYou], keeps: { t in [prop(.zzz, (t * 0.35).truncatingRemainder(dividingBy: 1))] })
+            ], pool: [.yawn, .lookAtYou], keeps: { t in [prop(.zzz, t * 0.35)] })
         case .grateful:
             return MoodPerformance(entrances: [
                 Entrance(duration: 1) { p, c in c.add(.heart, p); c.offset.y -= sin(p * pi) * 4 },

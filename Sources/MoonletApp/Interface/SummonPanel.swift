@@ -184,9 +184,6 @@ struct SummonView: View {
     static let wellCenter = CGPoint(x: margin + padding + SummonWell.size / 2,
                                     y: margin + padding + headerHeight + headerGap + SummonWell.size / 2)
 
-    /// Kept for the demo film until it anchors on `wellCenter`; its x matches.
-    @available(*, deprecated, message: "Use wellCenter")
-    static let orbitSize: CGFloat = 2 * (wellCenter.x - margin - 14)
 
     var content: SummonContent
     var actions: Actions
