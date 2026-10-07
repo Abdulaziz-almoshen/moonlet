@@ -18,7 +18,7 @@ Useful while developing:
 
 ```bash
 MOONLET_DEBUG=1 swift run MoonletApp            # log every decision to the terminal
-swift run MoonletApp --render-docs docs/images  # regenerate the README images
+swift run MoonletApp --render-docs docs/images  # regenerate the README and DESIGN images
 scripts/make-demo.sh                            # regenerate the demo film (needs ffmpeg)
 ```
 

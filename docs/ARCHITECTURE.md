@@ -39,7 +39,7 @@ Moonlet is one Swift package with five libraries, one command-line tool, and one
 
 Everything that decides *what happens* lives in value types with no clock and no I/O (`AgentStore`, `AttentionEngine`, `PointerPolicy`, `GestureRecognizer`, `CompanionMood`, `StuckDetector`, `EngagementTracker`), so it's covered by fast unit tests. The app layer only senses, renders, and wires.
 
-The companion is drawn with Core Graphics from a `CompanionPose` (face, look, arms, props), so the same art serves the live companion, the summon view, the docs images, and the demo film. `CompanionDirector` owns the animation: a 60 Hz timer while the companion is out and none otherwise.
+The companion is drawn with Core Graphics from a `CompanionPose` (face, look, arms, props), so the same art serves the live companion, the summon view, the docs images, and the demo film. `CompanionDirector` owns the animation and places the card: a 60 Hz timer while a card or the companion is out and none otherwise. With the companion turned off, cards ride with the pointer exactly as they did before the companion existed.
 
 ## Threading
 
@@ -63,7 +63,7 @@ Hiding and showing go through the public `CGDisplayHideCursor` and `CGDisplaySho
 
 The pointer skin must never get between the user and their apps. `AppModel` checks two things while it draws:
 
-- **Interception.** Moonlet's click-through windows should never receive an event. If the skin, companion, or card window gets a click or scroll, the skin turns itself off. The one exception is a request card while it's parked: it takes clicks on purpose, to open the agent, and goes back to click-through as soon as it leaves.
+- **Interception.** Moonlet's click-through windows should never receive an event. If the skin, companion, or card window gets a click or scroll, the skin turns itself off. The one exception is a parked request card, which takes a click on purpose, to open the agent, but only on its visible box, only once the pointer has rested there for about 0.15 s, and never within 0.3 s of a scroll; a scroll that still lands on it makes it click-through at once. An event counts as intended only if it was made while the card took input (its timestamp, on the same clock as `systemUptime`, is compared with when the card last went click-through), so a click queued behind a slow jump never turns the skin off. The companion's own window is always click-through.
 - **Delivery.** Every hardware click and scroll (from `CGEventSource`) should reach some app, which Moonlet sees through its global and local event monitors. Two undelivered presses within 15 seconds turn the skin off.
 
 Either way the reason appears in the menu and in `~/Library/Logs/Moonlet/app.log`, which also records once a minute how many presses reached apps while the pointer showed.

@@ -17,7 +17,7 @@ public enum CompanionMood: String, Sendable, CaseIterable, Codable {
     case proud
     /// Any other good news.
     case happy
-    /// A tiny fix: a typo, lint, a rename.
+    /// A tiny fix: a typo, lint, whitespace.
     case cheeky
     /// Unexpected news: found more of something.
     case surprised
@@ -29,7 +29,7 @@ public enum CompanionMood: String, Sendable, CaseIterable, Codable {
     case nervous
     /// A failure.
     case teary
-    /// No news for a long time.
+    /// No news for a long time, or a finished turn that reports bad news.
     case worried
     /// Rate limits, quotas, overload: the agent has to wait.
     case sleepy
@@ -68,38 +68,66 @@ public enum CompanionMood: String, Sendable, CaseIterable, Codable {
 
     /// Reads the mood from what kind of moment it is and what the agent said.
     /// The kind decides the family (asking, bad news, good news); the words pick
-    /// the mood within it, so a failure is never read as a celebration.
-    public static func read(kind: MomentKind, title: String = "", detail: String) -> CompanionMood {
-        let text = detail + " " + title
+    /// the mood within it. A finished turn that reports bad news is read as bad
+    /// news first, so a failed deploy is never a celebration. Only the first
+    /// 500 characters are read.
+    public static func read(kind: MomentKind, detail: String) -> CompanionMood {
+        let text = String(detail.prefix(500))
         switch kind {
         case .needsYou, .question:
-            if matches(text, risky) { return .nervous }
-            if kind == .question || text.contains("?") || matches(text, asksToChoose) { return .curious }
+            if risky.matches(text) { return .nervous }
+            if kind == .question || text.contains("?") || asksToChoose.matches(text) { return .curious }
             return .asking
         case .failed:
-            return matches(text, waitsForLimit) ? .sleepy : .teary
+            return waitsForLimit.matches(text) ? .sleepy : .teary
         case .stuck:
             return .worried
         case .finished:
-            if matches(text, thanks) { return .grateful }
-            if matches(text, shipped) { return .celebrate }
-            if matches(text, tiny) { return .cheeky }
-            if matches(text, surprising) { return .surprised }
-            if matches(text, green) { return .proud }
+            if badNews.matches(allClear.removing(from: text)) || hitLimit.matches(text) {
+                return waitsForLimit.matches(text) ? .sleepy : .worried
+            }
+            if thanks.matches(text) { return .grateful }
+            if shipped.matches(text) { return .celebrate }
+            if tiny.matches(text) { return .cheeky }
+            if surprising.matches(text) { return .surprised }
+            if green.matches(text) { return .proud }
             return .happy
         }
     }
 
-    private static let risky = #"rm -rf|\bdelete\b|\bdrop (table|database)\b|--force|force[- ]push|push -f|\bsudo\b|reset --hard|\bwipe\b|\bprod(uction)?\b"#
-    private static let asksToChoose = #"^(which|should|do you|would you|can i|may i)\b|\bprefer\b|\bchoose\b"#
-    private static let waitsForLimit = #"rate.?limit|usage limit|quota|overloaded|try again later|\bback at\b"#
-    private static let thanks = #"\bthank"#
-    private static let shipped = #"\bdeploy|\bshipped\b|\breleased?\b|\bis live\b|\blive on\b|\blaunched\b|\bmerged\b|\bpublished\b"#
-    private static let tiny = #"\btypo|\blint\b|whitespace|\brenamed?\b|one-liner|\bnit\b|small fix|tiny"#
-    private static let surprising = #"\bfound \d+|unexpected|turns out|surpris"#
-    private static let green = #"\bpass(es|ed)?\b|\bgreen\b|\ball \d+\b|100%|\bfaster\b|lighthouse|benchmark|\bclean\b"#
+    private static let risky = Pattern(#"rm -rf|\bdelete\b|\bdrop (table|database)\b|--force|force[- ]push|push -f|\bsudo\b|reset --hard|\bwipe\b|\bprod(uction)?\b"#)
+    private static let asksToChoose = Pattern(#"^(which|should|do you|would you|can i|may i)\b|\bprefer\b|\bchoose\b"#)
+    private static let waitsForLimit = Pattern(#"rate.?limit|usage limit|quota|overloaded|try again later|\bback at\b"#)
+    /// A finished turn that ran into a limit: the agent has to wait.
+    private static let hitLimit = Pattern(#"\b(hit|reached|exceeded)( the| my| your| a)? (rate|usage) ?limit|\brate.?limited\b|\busage limit\b|\bquota (exceeded|reached)\b|\boverloaded\b|\btry again later\b"#)
+    /// Words that mean the turn did not go well, whatever else it says.
+    private static let badNews = Pattern(#"\bfail(s|ed|ing|ures?)?\b|\b(could|ca|did|was|is|wo)n['’]?t\b|\bcannot\b|\bunable\b|\bnot (yet )?(deployed|merged|released|shipped|published|passing)\b|\bblocked\b|\berrors?\b|\bregress|\bbroken?\b|\bdropped\b|\bstill (failing|red|broken)\b|\bci is red\b|\bmissing\b|\brefused\b|\bdenied\b|\btimed out\b"#)
+    /// Good news phrased with a bad word, set aside before looking for bad news:
+    /// `no errors`, `0 failures`, `fixed 3 lint errors`, `added the missing tests`,
+    /// `error handling`, `regression tests`.
+    private static let allClear = Pattern(#"\b(no|0|zero|without)( new)? (errors?|failures?|regressions?|failing tests?)\b|\b(fix(ed|es)?|resolved|handled?|added)( the| a| an| all| both| \d+)?( \w+)? (errors?|failures?|failing|broken|regressions?|missing)\b|\berror (handling|messages?|states?|pages?|codes?|boundar(y|ies)|logging|reporting)\b|\bregression tests?\b"#)
+    private static let thanks = Pattern(#"\bthank"#)
+    private static let shipped = Pattern(#"\b(deployed|shipped|released|merged|published)\b|\bis (now )?live\b|\blive on\b"#)
+    private static let tiny = Pattern(#"\btypos?\b|\blint\b|\bwhitespace\b|\bone-liner\b|\bnits?\b|\bsmall fix\b|\btiny fix\b"#)
+    private static let surprising = Pattern(#"\bfound \d+|unexpected|turns out|surpris"#)
+    private static let green = Pattern(#"\bpass(es|ed)?\b|\bgreen\b|\ball \d+\b|100%|\bfaster\b|lighthouse|benchmark|\bclean\b"#)
 
-    private static func matches(_ text: String, _ pattern: String) -> Bool {
-        text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    /// A case-insensitive pattern, compiled once.
+    private struct Pattern: @unchecked Sendable {
+        let regex: NSRegularExpression
+
+        init(_ pattern: String) {
+            // The patterns are literals, so failing to compile is a programming error.
+            regex = try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        }
+
+        func matches(_ text: String) -> Bool {
+            regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+        }
+
+        /// `text` with every match blanked out.
+        func removing(from text: String) -> String {
+            regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: " ")
+        }
     }
 }

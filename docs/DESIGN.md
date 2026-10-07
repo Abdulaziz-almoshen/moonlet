@@ -72,35 +72,42 @@ The first three cards that leave on their own fly into the menu bar moon, so you
 
 ## Already watching
 
-If an agent finishes a quick task (under a minute) in the app that's in front, you were probably watching it. Moonlet flashes the pointer blue instead of showing a card. Longer tasks always get a card, because you may have switched tabs or sessions in the same app.
+If an agent finishes a quick task (under a minute) in the app that's in front, you were probably watching it. Moonlet flashes the pointer blue instead of showing a card, and the companion stays out of sight. Longer tasks always get a card, because you may have switched tabs or sessions in the same app.
 
 ## The companion
 
-A tiny moon with a face brings every card. It is never on screen while agents work; it pops out of the pointer's tip with a message and fades away when the talk is over.
+A tiny moon with a face brings every card. It is never on screen while agents work, and never comes out without a message: it pops out of the pointer's tip with a card and fades away when the card goes.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/companion-expressions-dark.png">
+  <img src="images/companion-expressions-light.png" width="700" alt="The companion's eighteen faces: content, delighted, proud, starry, cheeky, blep, asking, curious, nervous, surprised, worried, teary, oops, sleepy, focused, shy, smitten, pleading">
+</picture>
 
 | Moment | Words that decide it | Face and props |
 | --- | --- | --- |
-| Celebrate | deployed, shipped, released, merged, live on | Starry eyes, party hat, confetti, a spin |
+| Celebrate | deployed, shipped, released, merged, published, is live | Starry eyes, party hat, confetti, a spin |
 | Proud | pass, green, all 14, faster | Happy eyes, a check badge, humming |
-| Cheeky | typo, lint, rename, small fix | A wink, sticks out its tongue |
+| Cheeky | typo, lint, whitespace, one-liner, nit, small fix | A wink, sticks out its tongue |
 | Surprised | found 3 more, unexpected | Wide eyes, sparkles |
 | Happy | any other good news | A hop and a check badge |
+| Grateful | thanks | Heart eyes, a heart |
 | Asking | a permission request | Holds up a yellow **?** sign |
-| Curious | a question, often with options | A **?** sign, glancing between the options |
-| Nervous | a request to `rm -rf`, force-push, `sudo`, touch production | A red **!** sign, fidgeting, a sweat drop |
+| Curious | a question, often with options | A yellow **?** sign, glancing between the options |
+| Nervous | a request to `rm -rf`, force-push, `sudo`, touch production | An orange **!** sign, fidgeting, a sweat drop |
 | Teary | a failure | Glossy eyes, a rolling tear, a little rain cloud |
 | Sleepy | rate limit, quota, overloaded | Yawns, z's |
-| Worried | no news for 10 minutes | Worried brows, a sweat drop |
+| Worried | no news for 10 minutes, or finished work that reports a problem | Worried brows, a sweat drop |
 
-The kind of moment picks the family (a request, bad news, good news) and the words pick the mood within it, so a failed deploy is never read as a celebration.
+The kind of moment picks the family (a request, bad news, good news) and the words pick the mood within it. Finished work is read for bad news first: if it says something failed, couldn't be done, isn't merged yet, regressed, dropped, or is missing, the companion is worried (sleepy for a rate limit) and never celebrates, so a failed deploy is never read as a celebration. Good news that names a bad word, such as `no errors` or `fixed 3 lint errors`, stays good news. Only what the agent said counts, never an agent's or project's name, and only its first 500 characters.
 
-- **Never the same twice.** Each mood has its own entrance, two for most moods, never the same one twice in a row. While the card shows, the companion picks small moves at random (a hop, humming, a wave, a glance at you), never repeating the last. About one appearance in seven adds a surprise: a sneeze of sparkles, a spin, a blush.
-- **It feels you move.** It rides a spring behind the pointer, leans into turns, stretches when you move fast, and holds on tight when you fling the pointer across the screen. Its eyes follow the pointer.
-- **Requests wait for you.** A permission or question card stops riding with the pointer after a moment and parks, with the companion sitting on its corner. You can move to it and click it to open the agent's tab; it hops as you get close. If you move far away for a second, it catches up and parks near you again. It stays until the agent gets its answer, then thanks you (heart eyes if you were quick) and fades. After 10 minutes it leaves quietly, and the reminders bring it back.
-- **Only a parked card takes clicks.** Everything else the companion shows is click-through, like the pointer.
-- **Reduce Motion** turns off the entrances, moves, and springs; the faces stay.
+- **Never the same twice.** Each mood has its own entrance; the good-news moods (celebrate, proud, happy, cheeky) have two and never play the same one twice in a row. While the card shows, the companion picks small moves at random (a hop, humming, a wave, a glance at you), never repeating the last. About one appearance in seven adds a surprise: a sneeze of sparkles, a spin, a blush.
+- **It feels you move.** It rides a spring behind the pointer, leans into turns, stretches when you move fast, and holds on tight when you fling the pointer across the screen. Its eyes follow the pointer. It always stays on the pointer's screen: near the right edge it rides on the pointer's left, and near the bottom edge above the tip.
+- **Requests stop for you.** A permission or question card shows for exactly as long as the rules in [A card's life](#a-cards-life) say: about 8 s while you're active, longer while you're paused. While it shows, it stops riding with the pointer after a moment and parks, with the companion on its corner, so you can reach it instead of chasing it. It hops as you get close, and if you move far away for a second, it catches up and parks near you again. Click it to open the agent's tab; the companion waves and fades. Once the card has had its time, or you click somewhere else, it fades like any other card, and the reminders at 2, 10, and 30 minutes bring it back.
+- **Thanks for answering.** If the agent gets its answer while its card shows, say you typed `y` in its terminal, the companion thanks you, with heart eyes and a heart if you answered within 6 s of the card appearing, or a delighted hop otherwise, then fades. A card for several agents doesn't thank you for answering just one of them. A stuck agent that gets going again, or a session that ends, just fades.
+- **A parked card takes a click only on purpose.** It takes input only on its visible box, only once the pointer has rested there for a moment (about 0.15 s), and never within 0.3 s of a scroll; a scroll that still lands on it makes it click-through at once, so the rest of the scroll reaches your app. Everything else the companion shows is click-through, like the pointer.
+- **Reduce Motion** turns off the entrances, moves, springs, hops, waves, pops, and glides; looping props such as a tear or z's hold still. The faces and props stay, and leaving is a plain fade.
 
-Turn the companion off with **Settings → Companion brings the cards**; cards then ride with the pointer on their own, as before.
+Turn the companion off with **Settings → Companion brings the cards**, and cards work exactly as they did before it existed: each rides just below and to the right of the pointer, flipping at the screen's edges, never takes a click, doesn't park, and leaves exactly when the rules say. The change applies at once, even to a card on screen.
 
 ## The pointer
 
@@ -112,9 +119,9 @@ The pointer changes only while an agent talks to you. Silent work never changes 
 | A card tells you something, such as a finished task | Blue while the card shows |
 | An agent asks you something: a question or a permission request | Yellow until you answer, for up to 10 minutes; after that, only its reminder cards bring yellow back |
 | A card reports a failure or a stuck agent | Red while the card shows |
-| A quick task you just watched finish | A brief blue flash, no card |
+| A quick task you just watched finish | A brief blue flash; no card, no companion |
 
-A card's color wins while it shows; with no card, an unanswered question keeps the pointer yellow. Colors mean the same thing everywhere: on the pointer, on a card's edge, on the menu bar moon's dot, and on the moons in the summon view, where quietly working agents are gray.
+A card's color wins while it shows; with no card, an unanswered question keeps the pointer yellow. Colors mean the same thing everywhere: on the pointer, on a card's edge, on the menu bar moon's dot, and on the summon view's Next up card and timeline. The companion's signs follow suit: a yellow **?** for a request or a question, and an orange **!** for a risky request, which still waits on you; red always means something went wrong. In the summon view's well, agents show a face instead of a color: working agents look focused, and finished ones doze off after a while.
 
 ## Summon
 
@@ -123,7 +130,7 @@ A card's color wins while it shows; with no card, an unanswered question keeps t
   <img src="images/summon-light.png" width="520" alt="The summon view: agents as little companions in a gravity well, a Next up card, the other agents with times, and a one-hour timeline">
 </picture>
 
-Two ways to open the summon view, plus **Show all agents** in the menu:
+Two ways to open the summon view, plus **Show all agents** in the menu and `moonlet summon`:
 
 - **Circle:** about one turn of the pointer, between 15 and 160 points across, within 1.2 s, with no button held.
 - **Shortcut:** <kbd>⌃⌥M</kbd>, which needs no permissions (Carbon hot keys).
@@ -136,8 +143,8 @@ The view opens where you drew the circle and answers one question first: what ne
 - **Gravity:** every agent is a little companion with the face of its latest message. Agents waiting on you are pulled closest to the middle, failures sit just outside them, working agents slowly circle further out, and finished ones rest at the edge, dozing off after a while. Each is lit like a moon by its progress: a finished agent is a full moon.
 - **Next up:** the most urgent agent with its question, its options, and **Open in iTerm**.
 - **Everything else:** one row per agent with a time (`waiting 6 min`, `~4 min left`, `3 min ago`) and a dot when it changed since you last looked. Pointing at an agent makes it say its line while the others turn to look.
-- **The last hour:** a timeline with a shape for each kind of moment.
-- **Keys:** 1–9 open an agent, Return opens Next up, Esc closes.
+- **The last hour:** a timeline with a shape for each kind of moment, covering the whole hour however many agents talked.
+- **Keys,** only when you opened it from the keyboard (the shortcut, the menu, or `moonlet summon`): 1–9 open an agent, on the number row or the keypad in any keyboard layout; Return opens Next up; Esc closes. Any other key just closes it, with no beep, and your typing goes back to the app in front. A circle opens it for the mouse only, so your typing never lands in it; its hint then says *click an agent to open*.
 
 Opening the view counts as seeing everything, and clicking an agent brings its terminal tab or app forward.
 
