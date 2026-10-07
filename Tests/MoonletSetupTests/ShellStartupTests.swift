@@ -43,6 +43,11 @@ struct ShellStartupTests {
         ("/bin/stty erase '^?'\n", "stty"),
         ("if [[ -o interactive ]]; then\n  bindkey -e\nfi\nstty -ixon\n", "stty"),
         ("if [[ -o login ]]; then\n  stty -ixon\nfi\n", "stty"),
+        // The non-interactive branch of an interactive test, and early returns that leave the rest to non-interactive shells.
+        ("if [[ -o interactive ]]; then\n  bindkey -e\nelse\n  stty -ixon\nfi\n", "stty"),
+        ("if [[ $- != *i* ]]; then\n  stty -ixon\nfi\n", "stty"),
+        ("[[ $- == *i* ]] && return\nstty -ixon\n", "stty"),
+        ("[[ -o interactive ]] && return\ntput cols\n", "tput"),
     ])
     func findsCommandsThatUseTheTerminal(text: String, command: String) {
         #expect(ShellStartup.terminalCommand(in: text) == command)
@@ -58,6 +63,8 @@ struct ShellStartupTests {
         "if [[ $- == *i* ]]; then\n  stty -ixon\n  if true; then\n    tput setaf 1\n  fi\nfi\n",
         "if [ -n \"$PS1\" ]; then\n  stty -ixon\nfi\n",
         "[[ $- != *i* ]] && return\nstty -ixon\n",
+        "[[ -o interactive ]] || return\nstty -ixon\n",
+        "if [[ $- != *i* ]]; then\n  export X=1\nelse\n  stty -ixon\nfi\n",
         "case $- in\n  *i*) ;;\n  *) return ;;\nesac\nstty sane\n",
         "export HISTFILE=~/.history # stty is for later\n",
     ])

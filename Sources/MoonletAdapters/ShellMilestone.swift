@@ -122,9 +122,12 @@ enum ShellMilestone {
         switch program {
         case "git":
             let gitOptionsWithValues: Set<Substring> = ["-C", "-c", "--git-dir", "--work-tree", "--namespace"]
-            switch firstOperand(of: arguments, optionsWithValues: gitOptionsWithValues)?.word {
-            case "commit": return .commit
-            case "push": return .push
+            guard let operand = firstOperand(of: arguments, optionsWithValues: gitOptionsWithValues) else { return nil }
+            // A dry run changes nothing. (`git commit -n` skips hooks; it isn't a dry run.)
+            let rest = arguments[operand.index...].dropFirst()
+            switch operand.word {
+            case "commit": return rest.contains("--dry-run") ? nil : .commit
+            case "push": return rest.contains("--dry-run") || rest.contains("-n") ? nil : .push
             default: return nil
             }
         case "gh":
@@ -132,7 +135,8 @@ enum ShellMilestone {
             guard let group = firstOperand(of: arguments, optionsWithValues: ghOptionsWithValues),
                 group.word == "pr",
                 firstOperand(of: arguments[group.index...].dropFirst(), optionsWithValues: ghOptionsWithValues)?
-                    .word == "create"
+                    .word == "create",
+                !arguments.contains("--dry-run")
             else { return nil }
             return .pullRequest
         default:

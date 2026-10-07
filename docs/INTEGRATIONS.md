@@ -38,7 +38,7 @@ With Codex 0.153 or later, Moonlet adds one hook group per event to `~/.codex/ho
 
 **Trust.** Codex runs a new or changed hook only after you trust it. The next time Codex starts, it asks you to review the new hooks; or type `/hooks` and press `t`. Moonlet never trusts hooks for you. Moving the `moonlet` command changes the hooks, so Codex asks again. Codex knows each hook by its place in the file, so if your own hooks follow Moonlet's group for an event, uninstalling moves them up and Codex asks about them again; the uninstall names those events.
 
-`moonlet doctor` counts the hooks as trusted only when Codex has a trust record for each and a hook reported after `hooks.json` last changed. If the file changed since, it warns that Codex may ask you to trust Moonlet's hooks again: open `/hooks` in Codex.
+`moonlet doctor` says the hooks are reporting once one of them has reported since `hooks.json` last changed: only hooks Codex runs can report, so that settles it even where Codex keeps no trust record Moonlet can read. Before any report, it checks Codex's trust records: a hook without one fails the check, and if every hook has one but the file changed since, it warns that Codex may ask you to trust Moonlet's hooks again: open `/hooks` in Codex.
 
 | Hook event | What Moonlet records |
 | --- | --- |
@@ -53,7 +53,7 @@ With Codex 0.153 or later, Moonlet adds one hook group per event to `~/.codex/ho
 
 The hook is a pure observer, like Claude Code's: it writes nothing to standard output or standard error and always exits 0, so it can't approve, block, or add to anything Codex does. It runs synchronously, so events arrive in order, and returns in a few hundredths of a second, so the Codex TUI doesn't show it; `codex exec` does list each run, as a `hook: <Event>` line. Hooks in `~/.codex` also run for Codex sessions in the desktop app and editors that share that folder.
 
-Codex 0.153 and 0.154 run hooks without detaching them from the terminal (0.155 does). If a shell startup file that a hook's shell reads (`~/.zshenv`, or `$BASH_ENV` when your shell is bash) runs `stty`, `tput`, `tty -s`, or `read -t` outside an interactive-only check, the system can stop the hook until Codex's timeout ends it. `moonlet doctor` warns about that; it only reads those files.
+Codex 0.153 and 0.154 run hooks without detaching them from the terminal (0.155 does). If a shell startup file that a hook's shell reads (`~/.zshenv`, `$ZDOTDIR/.zshenv`, and `$BASH_ENV` when your shell is bash) runs `stty`, `tput`, `tty -s`, `read -t`, `-k`, or `-q`, or redirects from or to `/dev/tty`, outside an interactive-only check, the system can stop the hook until Codex's timeout ends it. `moonlet doctor` warns about that; it only reads those files.
 
 Codex 0.154 sends a shell command's output without its exit code, so a milestone needs the output to show the step went through: git's `[branch 3f2a1b9] message` line for a commit; a ref update (`1a2b3c4..5d6e7f8  main -> main`, `* [new branch]`, or a forced `+`), `Everything up-to-date`, or `set up to track` for a push; a `/pull/<number>` URL for `gh pr create`. Output with `error:`, `fatal:`, or `! [rejected]` never counts. When the output starts with an exit code header, the code decides.
 

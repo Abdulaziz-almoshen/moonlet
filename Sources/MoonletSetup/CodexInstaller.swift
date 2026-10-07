@@ -163,7 +163,7 @@ public enum CodexInstaller {
 
     /// What to call the program at `path` in a message: the app it belongs to
     /// (`/Applications/Example.app/Contents/MacOS/client` → `Example`), or its file name.
-    static func programName(_ path: String) -> String {
+    public static func programName(_ path: String) -> String {
         let components = path.split(separator: "/")
         if let app = components.first(where: { $0.hasSuffix(".app") && $0.count > 4 }) {
             return String(app.dropLast(4))

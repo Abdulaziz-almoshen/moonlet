@@ -43,28 +43,45 @@ public enum ShellStartup {
     /// same line or in the `if` or `case` it opens, or after such a test returns early.
     public static func terminalCommand(in text: String) -> String? {
         var depth = 0
+        // The `if` or `case` depth whose current branch runs only in interactive shells,
+        // and the depth whose `else` branch will (an `if` that tests for a non-interactive shell).
         var guardedDepth: Int?
+        var guardedElseDepth: Int?
         for line in text.split(whereSeparator: \.isNewline) {
-            let commands = simpleCommands(in: code(in: line))
+            let code = code(in: line)
+            let commands = simpleCommands(in: code)
             let testsInteractive = testsForInteractiveShell(Array(commands.joined()))
+            let negated = code.contains("!=") || code.contains("! [") || code.contains("![") || code.contains("! test")
             for words in commands {
                 let keyword = words.first
                 if keyword == "if" || keyword == "case" {
                     depth += 1
                     if testsInteractive, guardedDepth == nil {
+                        // `if [[ $- == *i* ]]` guards its first branch; `if [[ $- != *i* ]]` its `else`.
+                        if keyword == "if", negated { guardedElseDepth = depth } else { guardedDepth = depth }
+                    }
+                } else if keyword == "else" || keyword == "elif" {
+                    if guardedDepth == depth {
+                        guardedDepth = nil
+                    } else if guardedElseDepth == depth, keyword == "else" {
                         guardedDepth = depth
                     }
                 } else if keyword == "fi" || keyword == "esac" {
-                    if guardedDepth == depth {
-                        guardedDepth = nil
-                    }
+                    if guardedDepth == depth { guardedDepth = nil }
+                    if guardedElseDepth == depth { guardedElseDepth = nil }
                     depth = max(depth - 1, 0)
                 }
                 if testsInteractive || guardedDepth != nil {
-                    // `[[ -o interactive ]] || return`, or `*) return ;;` in `case $- in`:
-                    // the rest of the file runs only in interactive shells.
                     if words.contains(where: { $0 == "return" || $0 == "exit" }) {
-                        return nil
+                        // `[[ -o interactive ]] || return`, `[[ $- != *i* ]] && return`, or
+                        // `*) return ;;` in `case $- in`: the rest runs only in interactive
+                        // shells. `[[ $- == *i* ]] && return` means the opposite: the rest
+                        // runs only in the non-interactive shells hooks use.
+                        let caseFallback = !testsInteractive && code.contains("*)")
+                        if caseFallback || negated != code.contains("||") {
+                            return nil
+                        }
+                        guardedDepth = nil
                     }
                     continue
                 }

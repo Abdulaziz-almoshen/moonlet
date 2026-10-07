@@ -123,7 +123,7 @@ enum DoctorCommand {
             let then = chained.first.map { ", then \(($0 as NSString).lastPathComponent)" } ?? ""
             lines.append(notifyLine(name, "notify runs Moonlet\(then)", executable: executable, primary: needsNotify, fixable: true))
         case .nested(let notifier, let executable):
-            let outer = notifier.first.map { ($0 as NSString).lastPathComponent } ?? "another program"
+            let outer = notifier.first.map(CodexInstaller.programName) ?? "another program"
             // Moonlet never edits another program's notify, so only a notify install (which chains it) helps.
             lines.append(
                 notifyLine(name, "notify runs Moonlet through \(outer)", executable: executable, primary: needsNotify, fixable: needsNotify))
@@ -175,7 +175,7 @@ enum DoctorCommand {
             return (.warn, "\(name): Codex may ask you to trust Moonlet's hooks again: open /hooks in Codex.")
         case .reporting:
             let age = lastReport.map { Console.age(since: $0) } ?? "now"
-            return (.pass, "\(name): \(hooks.count) hooks in \(path), trusted, last report \(age == "now" ? "just now" : age)")
+            return (.pass, "\(name): \(hooks.count) hooks in \(path), reporting (last report \(age == "now" ? "just now" : age))")
         }
     }
 

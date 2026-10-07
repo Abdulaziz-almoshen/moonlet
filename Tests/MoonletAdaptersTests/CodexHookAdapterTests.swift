@@ -315,6 +315,13 @@ struct CodexHookAdapterTests {
         ("git push", "To github.com:example/payments.git\n ! [remote rejected] main -> main (protected branch hook declined)\nerror: failed to push some refs to 'github.com:example/payments.git'\n", nil),
         ("git push", "fatal: The current branch retries has no upstream branch.\n", nil),
         ("git push", "Username for 'https://github.com': ", nil),
+        ("git push", "remote: pre-receive -> checking\n", nil),
+        ("git push", "To github.com:example/payments.git\n   main -> main\n", nil),
+        // Dry runs change nothing.
+        ("git push --dry-run", "To github.com:example/payments.git\n   1a2b3c4..5d6e7f8  retries -> retries\n", nil),
+        ("git push -n origin retries", "To github.com:example/payments.git\n   1a2b3c4..5d6e7f8  retries -> retries\n", nil),
+        ("git commit --dry-run -am x", "On branch retries\nChanges to be committed:\n", nil),
+        ("gh pr create --dry-run --fill", "https://github.com/example/payments/pull/42\n", nil),
         // Pull requests
         ("gh pr create --fill", "\nCreating pull request for retries into main in example/payments\n\nhttps://github.com/example/payments/pull/42\n", "Opened a pull request"),
         ("gh pr create --fill", "a pull request for branch \"retries\" into branch \"main\" already exists:\nhttps://github.com/example/payments/pull/42\n", nil),
