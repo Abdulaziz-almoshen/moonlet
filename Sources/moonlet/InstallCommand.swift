@@ -3,9 +3,6 @@ import MoonletSetup
 
 /// `moonlet install|uninstall claude-code|codex [--dry-run] [--settings PATH|--config PATH]`.
 enum InstallCommand {
-    /// How to let Codex run new hooks, which it skips until the user trusts them.
-    static let codexTrustHint = "Codex runs new hooks once you trust them: it asks at startup, or type /hooks and press t."
-
     static func run(_ action: InstallAction, _ arguments: [String], environment: [String: String]) throws -> Int32 {
         var arguments = Arguments(arguments)
         let target = try arguments.positional("claude-code or codex")
@@ -42,8 +39,12 @@ enum InstallCommand {
             }
             let primary = result.mechanism == .hooks ? hooksFile : config
             report([(hooksFile, result.hooks), (config, result.config)], primary: primary, dryRun: dryRun)
-            if action == .install, result.mechanism == .hooks, result.hooks.plan.hasChanges {
-                print(codexTrustHint)
+            for note in result.notes {
+                print(note)
+            }
+            // A dry run leaves nothing for Codex to ask about yet.
+            if action == .install, !dryRun, result.mechanism == .hooks, result.hooks.plan.hasChanges {
+                print(CodexHooksInstaller.trustHint)
             }
 
         default:

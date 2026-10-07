@@ -4,14 +4,15 @@ import MoonletIPC
 import MoonletSetup
 
 /// `moonlet doctor [--settings PATH] [--config PATH]`: checks the app, both integrations,
-/// and Ollama. Exits 1 if a required check fails; Ollama is optional.
+/// and Ollama. Exits 1 if a required check fails; warnings and Ollama don't count.
 enum DoctorCommand {
     private enum Outcome {
-        case pass, fail, skip
+        case pass, warn, fail, skip
 
         var symbol: String {
             switch self {
             case .pass: "✓"
+            case .warn: "!"
             case .fail: "✗"
             case .skip: "-"
             }
@@ -100,6 +101,11 @@ enum DoctorCommand {
                 checkCodexHooks(
                     hooks, name: name, mechanism: mechanism, hooksFile: hooksFile, hooksText: hooksText,
                     configText: configText, ledger: ledger))
+            if CodexInstaller.runsHooksOnTheTerminal(codexVersion: version),
+                let warning = terminalWarning(name: name, environment: environment)
+            {
+                lines.append(warning)
+            }
         } else if mechanism == .hooks {
             lines.append((.fail, "\(name): no Moonlet hooks in \(Console.displayPath(hooksFile.path)). Run: moonlet install codex"))
         }
@@ -153,21 +159,38 @@ enum DoctorCommand {
             return (.fail, "\(name): the hook runs \(executable(inCommand: command)), which isn't executable. Run: moonlet install codex")
         }
 
-        let trust = CodexHooksInstaller.trust(hooksText: hooksText, hooksPath: hooksFile.path, configText: configText)
-        let disabled = CodexHooksInstaller.allEvents.filter { trust[$0] == .disabled }
-        let untrusted = CodexHooksInstaller.allEvents.filter { trust[$0] == .untrusted }
         let lastReport = ledger.lastActivity
-        if let event = disabled.first {
-            let which = disabled.count == 1 ? "Moonlet's \(event) hook is" : "\(disabled.count) of Moonlet's hooks are"
-            return (.fail, "\(name): \(which) turned off. Turn \(disabled.count == 1 ? "it" : "them") on in Codex's /hooks.")
-        }
-        if !untrusted.isEmpty, untrusted.count < hooks.count || lastReport == nil {
-            let which = untrusted.count == hooks.count ? "Moonlet's hooks aren't" : "\(untrusted.count) of Moonlet's \(hooks.count) hooks aren't"
+        let modified = try? hooksFile.resolvingSymlinksInPath().resourceValues(forKeys: [.contentModificationDateKey])
+        let health = CodexHooksInstaller.health(
+            trust: CodexHooksInstaller.trust(hooksText: hooksText, hooksPath: hooksFile.path, configText: configText),
+            hooksModified: modified?.contentModificationDate, lastReport: lastReport)
+        switch health {
+        case .disabled(let events):
+            let which = events.count == 1 ? "Moonlet's \(events[0]) hook is" : "\(events.count) of Moonlet's hooks are"
+            return (.fail, "\(name): \(which) turned off. Turn \(events.count == 1 ? "it" : "them") on in Codex's /hooks.")
+        case .untrusted(let events):
+            let which = events.count == hooks.count ? "Moonlet's hooks aren't" : "\(events.count) of Moonlet's \(hooks.count) hooks aren't"
             return (.fail, "\(name): \(which) trusted yet. In Codex, type /hooks and press t.")
+        case .mayAskAgain:
+            return (.warn, "\(name): Codex may ask you to trust Moonlet's hooks again: open /hooks in Codex.")
+        case .reporting:
+            let age = lastReport.map { Console.age(since: $0) } ?? "now"
+            return (.pass, "\(name): \(hooks.count) hooks in \(path), trusted, last report \(age == "now" ? "just now" : age)")
         }
-        let age = lastReport.map { Console.age(since: $0) }
-        let reported = age.map { "last report \($0 == "now" ? "just now" : $0)" } ?? "no session has reported yet"
-        return (.pass, "\(name): \(hooks.count) hooks in \(path), \(reported)")
+    }
+
+    /// A warning when a shell startup file uses the terminal, which can stop a hook in a
+    /// Codex that runs hooks attached to it; `nil` otherwise.
+    private static func terminalWarning(name: String, environment: [String: String]) -> (Outcome, String)? {
+        let files = ShellStartup.files(environment: environment, home: FileManager.default.homeDirectoryForCurrentUser)
+        guard let use = ShellStartup.terminalUse(in: files, read: { try? String(contentsOf: $0, encoding: .utf8) }) else {
+            return nil
+        }
+        let fixed = CodexInstaller.detachedHooksVersion.prefix(2).map(String.init).joined(separator: ".")
+        return (
+            .warn,
+            "\(name): \(Console.displayPath(use.file.path)) runs \(use.command), which can stall Moonlet's hooks before Codex \(fixed). Update Codex, or run it only in interactive shells."
+        )
     }
 
     /// Ollama is optional; the app can use it to condense summaries.

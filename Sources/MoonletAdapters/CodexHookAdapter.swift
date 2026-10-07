@@ -34,11 +34,14 @@ public enum CodexHookAdapter {
     ///   - environment: The hook's environment, for host details.
     ///   - now: The event timestamp.
     ///   - host: Host details to attach. Defaults to what `environment` reveals.
+    ///   - readTranscriptTail: Reads the end of the transcript at a path. Only called for
+    ///     `PermissionRequest`, to see whether Codex's automatic reviewer answers it.
     public static func report(
         hookInput: Data,
         environment: [String: String],
         now: Date,
-        host: HostInfo? = nil
+        host: HostInfo? = nil,
+        readTranscriptTail: (String) -> String? = { _ in nil }
     ) -> Report {
         guard let payload = JSONFields(data: hookInput),
             let session = payload.nonEmptyString("session_id"),
@@ -82,16 +85,26 @@ public enum CodexHookAdapter {
             }
 
         case "PermissionRequest":
-            event.state = .waiting
-            event.message = requestMessage(forTool: tool, input: input)
+            let request = requestMessage(forTool: tool, input: input)
+            if let path = payload.nonEmptyString("transcript_path"),
+                let tail = readTranscriptTail(path),
+                CodexTranscript.approvalsReviewer(fromTail: tail) == CodexTranscript.automaticReviewer
+            {
+                // Codex's reviewer answers the request, not the user, so the agent keeps going.
+                event.state = .working
+                event.activity = reviewActivity(forRequest: request)
+            } else {
+                event.state = .waiting
+                event.message = request
+            }
 
         case "PostToolUse":
             event.state = .working
             if subagent == nil, tool == "update_plan" {
                 event.tasks = planTasks(input)
             }
-            if tool == "Bash", commandSucceeded(payload["tool_response"]) {
-                event.milestone = input?.string("command").flatMap(ShellMilestone.milestone(forCommand:))
+            if tool == "Bash", let command = input?.string("command") {
+                event.milestone = milestone(forCommand: command, response: payload["tool_response"])
             }
 
         case "Stop":
@@ -146,6 +159,15 @@ public enum CodexHookAdapter {
         return TextTools.oneLine(text, max: 100)
     }
 
+    /// "Reviewing: run npm install" for "Wants to run npm install": what the agent asked,
+    /// while Codex's automatic reviewer decides.
+    static func reviewActivity(forRequest request: String) -> String {
+        for prefix in ["Wants to ", "Wants "] where request.hasPrefix(prefix) {
+            return TextTools.oneLine("Reviewing: \(request.dropFirst(prefix.count))", max: 60)
+        }
+        return "Reviewing a request"
+    }
+
     /// The host of a managed-network approval, which Codex describes as
     /// `network-access <target>`; `nil` for other shell approvals.
     private static func networkTarget(_ input: JSONFields?) -> String? {
@@ -195,16 +217,28 @@ public enum CodexHookAdapter {
         }
     }
 
-    /// Whether a shell tool result reports success. Codex leads its output with
-    /// `Exit code: N` or `Process exited with code N`; a result without either counts as success.
-    static func commandSucceeded(_ response: Any?) -> Bool {
-        guard let text = response as? String else { return true }
-        for line in text.split(whereSeparator: \.isNewline).prefix(6) {
+    /// The milestone for a finished shell command, if it committed, pushed, or opened a
+    /// pull request. When the result starts with an exit code header (`Exit code: N` or
+    /// `Process exited with code N`), the code says whether the command worked. Codex 0.154
+    /// sends only the command's output, so then the output has to show the step went
+    /// through; without such evidence there's no milestone.
+    static func milestone(forCommand command: String, response: Any?) -> String? {
+        guard let output = response as? String else { return nil }
+        switch exitCode(in: output) {
+        case 0?: return ShellMilestone.milestone(forCommand: command)
+        case _?: return nil
+        case nil: return ShellMilestone.milestone(forCommand: command, output: output)
+        }
+    }
+
+    /// The exit code in a shell result's header, or `nil` when it has none.
+    static func exitCode(in output: String) -> Int? {
+        for line in output.split(whereSeparator: \.isNewline).prefix(6) {
             for marker in ["Exit code:", "Process exited with code"] where line.hasPrefix(marker) {
-                return Int(line.dropFirst(marker.count).trimmingCharacters(in: .whitespaces)) == 0
+                return Int(line.dropFirst(marker.count).trimmingCharacters(in: .whitespaces))
             }
         }
-        return true
+        return nil
     }
 }
 

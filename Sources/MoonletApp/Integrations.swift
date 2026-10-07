@@ -1,4 +1,5 @@
 import AppKit
+import MoonletSetup
 
 /// Connects coding agents to Moonlet by running the bundled `moonlet` command,
 /// the same code path people use from a terminal. Every change is previewed
@@ -9,10 +10,23 @@ enum Integrations {
         contents(of: "~/.claude/settings.json")?.contains("hook claude-code") == true
     }
 
-    /// Moonlet's hooks in `hooks.json`, or (for Codex before 0.153) its notify command.
+    /// Moonlet's hooks in `hooks.json`, or a notify command that runs Moonlet (for Codex
+    /// before 0.153): its own, or another app's that runs a Moonlet still on disk, which
+    /// `moonlet install codex` leaves as it is.
     static var isCodexConnected: Bool {
-        contents(of: "~/.codex/hooks.json")?.contains("hook codex") == true
-            || contents(of: "~/.codex/config.toml")?.contains("\"hook\", \"codex\"") == true
+        if let hooks = try? CodexHooksInstaller.installedHooks(hooksText: contents(of: "~/.codex/hooks.json") ?? ""),
+            !hooks.isEmpty
+        {
+            return true
+        }
+        switch try? CodexInstaller.notifyStatus(configText: contents(of: "~/.codex/config.toml") ?? "") {
+        case .installed?:
+            return true
+        case .nested(_, let executable)?:
+            return FileManager.default.isExecutableFile(atPath: executable)
+        case .notConfigured?, .foreign?, nil:
+            return false
+        }
     }
 
     static func connectClaudeCode() {
@@ -54,7 +68,7 @@ enum Integrations {
         let result = run(command, ["install", target])
         if result.status == 0 {
             // Codex skips new hooks until you trust them; the command says how.
-            let nextStep = result.output.split(separator: "\n").first { $0.contains("/hooks") }.map { "\n\n\($0)" } ?? ""
+            let nextStep = result.output.contains(CodexHooksInstaller.trustHint) ? "\n\n\(CodexHooksInstaller.trustHint)" : ""
             show("\(name) connected", "New \(name) sessions now report to Moonlet. Sessions already open start reporting after a restart.\(nextStep)")
         } else {
             show("Couldn't connect \(name)", result.output)

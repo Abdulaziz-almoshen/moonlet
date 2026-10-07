@@ -149,6 +149,66 @@ struct CodexHooksInstallerTests {
         #expect(try uninstall(moved.newText).newText == existing)
     }
 
+    /// The hooks.json text with a group of `command` appended to each of `events`.
+    private func appendingGroup(_ command: String, to events: [String], in text: String) throws -> String {
+        guard case .object(var root) = try OrderedJSON(parsing: text),
+            let hooksIndex = root.lastIndex(where: { $0.key == "hooks" }),
+            case .object(var hooks) = root[hooksIndex].value
+        else { throw InstallError("Expected an object with hooks") }
+        for event in events {
+            let group = OrderedJSON.object([OrderedJSON.Member("hooks", .array([entry(command, timeout: 10)]))])
+            if let index = hooks.firstIndex(where: { $0.key == event }), case .array(let groups) = hooks[index].value {
+                hooks[index].value = .array(groups + [group])
+            } else {
+                hooks.append(OrderedJSON.Member(event, .array([group])))
+            }
+        }
+        root[hooksIndex].value = .object(hooks)
+        return OrderedJSON.object(root).formatted() + "\n"
+    }
+
+    @Test func uninstallSaysWhichOfYourHooksCodexAsksAboutAgain() throws {
+        // You add hooks of your own after Moonlet's: Codex knows them by their position.
+        let installed = try install(existing)
+        let yours = try appendingGroup("/Users/example/bin/log-tool", to: ["Stop", "PreToolUse", "PostCompact"], in: installed.newText)
+        let root = try OrderedJSON(parsing: yours)
+        guard case .array(let stop)? = root["hooks"]?["Stop"] else {
+            Issue.record("Expected Stop groups")
+            return
+        }
+        #expect(stop.count == 3 && stop[1] == ourGroup())
+
+        // Taking Moonlet's group out moves them up, so Codex asks to trust them again.
+        let removed = try uninstall(yours)
+        #expect(removed.changes.last == "Codex will ask you to trust 2 of your own hooks again: PreToolUse, Stop")
+        #expect(removed.changes.dropLast() == CodexHooksInstaller.allEvents.map { "Remove the \($0) hook" })
+        #expect(!removed.removesFile)
+
+        // Only one moved: the note says so in words.
+        let one = try uninstall(try appendingGroup("/Users/example/bin/log-tool", to: ["Stop"], in: try install("").newText))
+        #expect(one.changes.last == "Codex will ask you to trust one of your own hooks again: Stop")
+
+        // Nothing after Moonlet's groups, nothing to trust again.
+        #expect(!(try uninstall(installed.newText)).changes.contains { $0.contains("trust") })
+    }
+
+    @Test func reconcilingAGroupMoonletSharesSaysWhoMoves() throws {
+        // Moonlet's entry ended up first in a group of yours: it moves to its own group,
+        // and your entry after it takes its index.
+        let text = """
+            {"hooks":{"Stop":[{"hooks":[{"type":"command","command":"\(command)"},{"type":"command","command":"/Users/example/bin/notify-me"}]}]}}
+            """
+        let plan = try install(text)
+        #expect(plan.changes.contains("Codex will ask you to trust one of your own hooks again: Stop"))
+        let root = try OrderedJSON(parsing: plan.newText)
+        guard case .array(let stop)? = root["hooks"]?["Stop"] else {
+            Issue.record("Expected Stop groups")
+            return
+        }
+        #expect(stop.count == 2 && stop[1] == ourGroup())
+        #expect(!(try install(plan.newText)).hasChanges)
+    }
+
     @Test func pathsWithSpacesAreQuoted() throws {
         let plan = try install("", path: "/Users/example/My Tools/moonlet")
         #expect(plan.newText.contains(#""command": "'/Users/example/My Tools/moonlet' hook codex""#))
@@ -221,6 +281,58 @@ struct CodexHooksInstallerTests {
             hooksText: try install("").newText, hooksPath: "/Users/example/.codex/hooks.json", configText: "model = \"o3\"\n")
         #expect(Set(trust.values) == [.untrusted])
         #expect(CodexHooksInstaller.trust(hooksText: "", hooksPath: "/x/hooks.json", configText: "").isEmpty)
+    }
+
+    // MARK: Health
+
+    private let changed = Date(timeIntervalSince1970: 1_790_000_000)
+
+    private func health(_ trust: CodexHooksInstaller.Trust, except: [String: CodexHooksInstaller.Trust] = [:], lastReport: TimeInterval?)
+        -> CodexHooksInstaller.Health
+    {
+        var records = Dictionary(uniqueKeysWithValues: CodexHooksInstaller.allEvents.map { ($0, trust) })
+        records.merge(except) { _, new in new }
+        return CodexHooksInstaller.health(
+            trust: records, hooksModified: changed, lastReport: lastReport.map { changed.addingTimeInterval($0) })
+    }
+
+    @Test func trustedHooksThatReportedSinceTheFileChangedAreHealthy() {
+        #expect(health(.trusted, lastReport: 60) == .reporting)
+    }
+
+    @Test func trustedHooksThatChangedSinceTheyLastReportedMayBeAskedAboutAgain() {
+        // Like Codex's "Modified": the records are there, but for the hooks as they were.
+        #expect(health(.trusted, lastReport: -60) == .mayAskAgain)
+        #expect(health(.trusted, lastReport: nil) == .mayAskAgain)
+        #expect(CodexHooksInstaller.health(trust: [:], hooksModified: nil, lastReport: nil) == .mayAskAgain)
+        #expect(CodexHooksInstaller.health(trust: ["Stop": .trusted], hooksModified: nil, lastReport: changed) == .reporting)
+    }
+
+    @Test func untrustedHooksWithOldActivityStillNeedTrust() {
+        // They reported once, but not since the file changed.
+        #expect(health(.untrusted, lastReport: -60) == .untrusted(CodexHooksInstaller.allEvents))
+        // Some trusted, some not: the others don't run, whatever reported.
+        #expect(health(.trusted, except: ["Stop": .untrusted, "PreToolUse": .untrusted], lastReport: 60) == .untrusted(["PreToolUse", "Stop"]))
+    }
+
+    @Test func untrustedHooksThatReportSinceTheFileChangedRunAnyway() {
+        // Only hooks Codex runs report, so their records must sit where this check can't read them.
+        #expect(health(.untrusted, lastReport: 60) == .reporting)
+    }
+
+    @Test func aFreshInstallNeedsTrust() throws {
+        let trust = CodexHooksInstaller.trust(
+            hooksText: try install("").newText, hooksPath: "/Users/example/.codex/hooks.json", configText: "")
+        #expect(CodexHooksInstaller.health(trust: trust, hooksModified: changed, lastReport: nil) == .untrusted(CodexHooksInstaller.allEvents))
+        // A reinstall after an earlier session reported.
+        #expect(
+            CodexHooksInstaller.health(trust: trust, hooksModified: changed, lastReport: changed.addingTimeInterval(-3600))
+                == .untrusted(CodexHooksInstaller.allEvents))
+    }
+
+    @Test func turnedOffHooksComeFirst() {
+        #expect(health(.trusted, except: ["SessionEnd": .disabled, "Stop": .disabled], lastReport: 60) == .disabled(["Stop", "SessionEnd"]))
+        #expect(health(.untrusted, except: ["Stop": .disabled], lastReport: nil) == .disabled(["Stop"]))
     }
 
     @Test(arguments: [

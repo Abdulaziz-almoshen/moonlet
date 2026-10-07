@@ -56,7 +56,9 @@ enum HookCommand {
         environment: [String: String], host: HostInfo, paths: MoonletPaths, log: HookLog
     ) -> [MoonletEvent] {
         let input = StandardInput.read(limit: 64 * 1024 * 1024, timeout: 1)
-        let report = CodexHookAdapter.report(hookInput: input, environment: environment, now: .now, host: host)
+        let report = CodexHookAdapter.report(
+            hookInput: input, environment: environment, now: .now, host: host,
+            readTranscriptTail: CodexTranscript.readTail(atPath:))
         guard let note = report.note else {
             log.write("codex: stdin isn't a hook payload (\(input.count) bytes)")
             return []

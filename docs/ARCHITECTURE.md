@@ -35,7 +35,7 @@ Moonlet is one Swift package with five libraries, one command-line tool, and one
 | `MoonletSetup` | Installers for Claude Code (`settings.json`) and Codex (`hooks.json`, or `notify` in `config.toml`) that preserve key order and comments | Core |
 | `MoonletBrain` | Attention rules, presence policy, gestures, pointer policy, the companion's mood reading, question and stuck detection, learning, summary parsing | Foundation, CoreGraphics |
 | `moonlet` | The command: hooks, `emit`, `status`, `summon`, `demo`, `install`, `doctor` | All libraries except Brain |
-| `MoonletApp` | The menu bar app: sensing, pointer skin, the companion (art, behaviors, director), cards, summon view, local model client | Core, IPC, Brain |
+| `MoonletApp` | The menu bar app: sensing, pointer skin, the companion (art, behaviors, director), cards, summon view, local model client | Core, IPC, Brain, Setup (to read whether Codex is connected) |
 
 Everything that decides *what happens* lives in value types with no clock and no I/O (`AgentStore`, `AttentionEngine`, `PointerPolicy`, `GestureRecognizer`, `CompanionMood`, `StuckDetector`, `EngagementTracker`), so it's covered by fast unit tests. The app layer only senses, renders, and wires.
 

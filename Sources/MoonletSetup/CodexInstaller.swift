@@ -34,11 +34,24 @@ public enum CodexInstaller {
     /// 0.153 Codex printed every hook run in its transcript.
     public static let minimumHooksVersion = [0, 153, 0]
 
+    /// The first Codex version that detaches hooks from the terminal.
+    public static let detachedHooksVersion = [0, 155, 0]
+
     /// The mechanism a Codex version string such as `"codex-cli 0.154.0"` supports, or
     /// `nil` when the version is unknown.
     public static func mechanism(forCodexVersion version: String?) -> Mechanism? {
         guard let components = version.flatMap(ClaudeCodeInstaller.versionComponents) else { return nil }
         return components.lexicographicallyPrecedes(minimumHooksVersion) ? .notify : .hooks
+    }
+
+    /// Whether a Codex version runs Moonlet's hooks still attached to the terminal: 0.153
+    /// and 0.154. There, a hook whose shell touches the terminal (see `ShellStartup`) can be
+    /// stopped by the system until Codex's timeout ends it.
+    public static func runsHooksOnTheTerminal(codexVersion version: String?) -> Bool {
+        guard mechanism(forCodexVersion: version) == .hooks,
+            let components = version.flatMap(ClaudeCodeInstaller.versionComponents)
+        else { return false }
+        return components.lexicographicallyPrecedes(detachedHooksVersion)
     }
 
     /// The edits to both files.
@@ -47,6 +60,9 @@ public enum CodexInstaller {
         public let mechanism: Mechanism
         public let config: InstallPlan
         public let hooks: InstallPlan
+        /// Lines for people about what Moonlet left alone on purpose: another app's notify
+        /// command that runs Moonlet.
+        public var notes: [String] = []
     }
 
     /// Plans connecting Codex, or disconnecting it.
@@ -56,22 +72,38 @@ public enum CodexInstaller {
     /// sessions whose hooks don't run (`moonlet hook codex` skips the turns the hooks
     /// reported); only its path to Moonlet is kept current. For an older Codex, Moonlet
     /// chains `notify` instead, and takes its hooks out, since those versions show every
-    /// hook run. When the version is unknown, whichever mechanism is already installed
-    /// stays; otherwise notify. Uninstalling removes both.
+    /// hook run; a notify command of another app that already runs Moonlet stays as it is,
+    /// as long as that Moonlet is executable. When the version is unknown, whichever
+    /// mechanism is already installed stays; otherwise notify. Uninstalling removes both,
+    /// but never edits another app's notify command; the plan's notes say how to take
+    /// Moonlet out of it.
+    ///
+    /// - Parameter isExecutable: Whether a path is an executable file.
     public static func plans(
         configText: String,
         hooksText: String,
         moonletPath: String,
         action: InstallAction,
-        codexVersion: String?
+        codexVersion: String?,
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
     ) throws -> Plans {
         let hooksInstalled = !(try CodexHooksInstaller.installedHooks(hooksText: hooksText)).isEmpty
+        var nested: (notifier: String, executable: String)?
+        if case .nested(let notifier, let executable)? = try? notifyStatus(configText: configText) {
+            nested = (notifier.first.map(programName) ?? "another program", executable)
+        }
         switch action {
         case .uninstall:
-            return Plans(
+            var plans = Plans(
                 mechanism: hooksInstalled ? .hooks : .notify,
                 config: try plan(configText: configText, moonletPath: moonletPath, action: .uninstall),
                 hooks: try CodexHooksInstaller.plan(hooksText: hooksText, moonletPath: moonletPath, action: .uninstall))
+            if let nested {
+                plans.notes.append(
+                    "Moonlet still runs inside \(nested.notifier)'s notify command, which Moonlet never edits. "
+                        + "To stop it, remove \(nested.executable) hook codex from that command in config.toml.")
+            }
+            return plans
         case .install:
             let mechanism = mechanism(forCodexVersion: codexVersion) ?? (hooksInstalled ? .hooks : .notify)
             switch mechanism {
@@ -84,10 +116,16 @@ public enum CodexInstaller {
                     mechanism: .hooks, config: config,
                     hooks: try CodexHooksInstaller.plan(hooksText: hooksText, moonletPath: moonletPath, action: .install))
             case .notify:
+                let hooks = try CodexHooksInstaller.plan(hooksText: hooksText, moonletPath: moonletPath, action: .uninstall)
+                // Chaining another app's notifier that already runs Moonlet would report every turn twice.
+                if let nested, isExecutable(nested.executable) {
+                    return Plans(
+                        mechanism: .notify, config: .unchanged(configText), hooks: hooks,
+                        notes: ["Moonlet already runs through \(nested.notifier)'s notify command, so notify stays as it is."])
+                }
                 return Plans(
-                    mechanism: .notify,
-                    config: try plan(configText: configText, moonletPath: moonletPath, action: .install),
-                    hooks: try CodexHooksInstaller.plan(hooksText: hooksText, moonletPath: moonletPath, action: .uninstall))
+                    mechanism: .notify, config: try plan(configText: configText, moonletPath: moonletPath, action: .install),
+                    hooks: hooks)
             }
         }
     }
@@ -101,11 +139,12 @@ public enum CodexInstaller {
         action: InstallAction,
         codexVersion: String?,
         dryRun: Bool = false,
-        now: Date = .now
-    ) throws -> (mechanism: Mechanism, config: InstallResult, hooks: InstallResult) {
+        now: Date = .now,
+        isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) throws -> (mechanism: Mechanism, config: InstallResult, hooks: InstallResult, notes: [String]) {
         let plans = try plans(
             configText: try ConfigFile.read(configURL), hooksText: try ConfigFile.read(hooksURL),
-            moonletPath: moonletPath, action: action, codexVersion: codexVersion)
+            moonletPath: moonletPath, action: action, codexVersion: codexVersion, isExecutable: isExecutable)
         func applyHooks() throws -> InstallResult {
             try ConfigFile.apply(to: hooksURL, dryRun: dryRun, now: now) { _ in plans.hooks }
         }
@@ -116,10 +155,20 @@ public enum CodexInstaller {
         // Codex reporting through neither.
         if action == .install, plans.mechanism == .notify {
             let config = try applyConfig()
-            return (plans.mechanism, config, try applyHooks())
+            return (plans.mechanism, config, try applyHooks(), plans.notes)
         }
         let hooks = try applyHooks()
-        return (plans.mechanism, try applyConfig(), hooks)
+        return (plans.mechanism, try applyConfig(), hooks, plans.notes)
+    }
+
+    /// What to call the program at `path` in a message: the app it belongs to
+    /// (`/Applications/Example.app/Contents/MacOS/client` → `Example`), or its file name.
+    static func programName(_ path: String) -> String {
+        let components = path.split(separator: "/")
+        if let app = components.first(where: { $0.hasSuffix(".app") && $0.count > 4 }) {
+            return String(app.dropLast(4))
+        }
+        return components.last.map(String.init) ?? path
     }
 
     /// Prefix of the comment lines that hold a chained setting's original text.

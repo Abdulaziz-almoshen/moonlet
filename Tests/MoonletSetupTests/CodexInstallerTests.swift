@@ -340,6 +340,64 @@ struct CodexInstallerTests {
         #expect(!hooked.config.hasChanges && !hooked.hooks.hasChanges)
     }
 
+    // MARK: Another app's notifier that runs Moonlet
+
+    private let companion = "/Applications/Example Companion.app/Contents/MacOS/ExampleClient"
+
+    private var nestedConfig: String {
+        "notify = \(TOMLDocument.render([companion, "turn-ended", "--previous-notify", #"["/usr/local/bin/moonlet","hook","codex"]"#]))\n"
+    }
+
+    @Test func anOlderCodexKeepsANotifierThatAlreadyRunsMoonlet() throws {
+        let plans = try CodexInstaller.plans(
+            configText: nestedConfig, hooksText: "", moonletPath: moonlet, action: .install, codexVersion: "codex-cli 0.140.0",
+            isExecutable: { $0 == moonlet })
+        #expect(plans.mechanism == .notify)
+        #expect(!plans.config.hasChanges && plans.config.newText == nestedConfig)
+        #expect(plans.notes == ["Moonlet already runs through Example Companion's notify command, so notify stays as it is."])
+    }
+
+    @Test func anOlderCodexChainsANotifierWhoseMoonletIsGone() throws {
+        let plans = try CodexInstaller.plans(
+            configText: nestedConfig, hooksText: "", moonletPath: "/opt/homebrew/bin/moonlet", action: .install,
+            codexVersion: "codex-cli 0.140.0", isExecutable: { _ in false })
+        #expect(plans.config.changes == ["Chain the existing notify command (\(companion)) through /opt/homebrew/bin/moonlet"])
+        #expect(plans.notes.isEmpty)
+    }
+
+    @Test func uninstallSaysMoonletStillRunsInsideAnotherNotifier() throws {
+        let removed = try plans(config: nestedConfig, action: .uninstall)
+        #expect(!removed.config.hasChanges)
+        #expect(
+            removed.notes == [
+                "Moonlet still runs inside Example Companion's notify command, which Moonlet never edits. "
+                    + "To stop it, remove /usr/local/bin/moonlet hook codex from that command in config.toml."
+            ])
+        // Moonlet's own chain comes out without a note.
+        let chained = try install(#"notify = ["notify-send", "Codex"]"# + "\n").newText
+        #expect(try plans(config: chained, action: .uninstall).notes.isEmpty)
+    }
+
+    @Test(arguments: [
+        ("/Applications/Example Companion.app/Contents/MacOS/ExampleClient", "Example Companion"),
+        ("/opt/wrapper", "wrapper"),
+        ("notify-send", "notify-send"),
+        ("/Users/example/.app/bin/notify", "notify"),
+    ])
+    func programsAreNamedAfterTheirApp(path: String, name: String) {
+        #expect(CodexInstaller.programName(path) == name)
+    }
+
+    // MARK: Hooks on the terminal
+
+    @Test(arguments: [
+        ("codex-cli 0.153.0", true), ("codex-cli 0.154.2", true), ("codex-cli 0.155.0", false), ("codex-cli 1.0.0", false),
+        ("codex-cli 0.152.0", false), (nil, false),
+    ] as [(String?, Bool)])
+    func codex153And154RunHooksOnTheTerminal(version: String?, attached: Bool) {
+        #expect(CodexInstaller.runsHooksOnTheTerminal(codexVersion: version) == attached)
+    }
+
     @Test func installThenUninstallRestoresBothFiles() throws {
         let config = """
             model = "gpt-5-codex"

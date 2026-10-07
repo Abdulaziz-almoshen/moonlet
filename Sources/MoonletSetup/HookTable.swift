@@ -81,6 +81,39 @@ struct HookTable {
         return result
     }
 
+    /// The events whose other entries sit somewhere else in `new` than in `old` (a later
+    /// group's index drops when Moonlet's group goes, and so does a later entry's when
+    /// Moonlet's entry leaves a shared group), with how many moved, in `events` order.
+    /// Codex keys trust by position, so it asks about those entries again.
+    func movedEntries(from old: [OrderedJSON.Member], to new: [OrderedJSON.Member]) -> [(event: String, count: Int)] {
+        let rank = { (event: String) in events.firstIndex(of: event) ?? events.count }
+        var moved: [(event: String, count: Int)] = []
+        for member in old {
+            let before = otherPositions(member.value)
+            let after = otherPositions(new.last { $0.key == member.key }?.value)
+            let count = zip(before, after).filter { $0 != $1 }.count + max(before.count - after.count, 0)
+            if count > 0 {
+                moved.append((member.key, count))
+            }
+        }
+        return moved.enumerated()
+            .sorted { (rank($0.element.event), $0.offset) < (rank($1.element.event), $1.offset) }
+            .map(\.element)
+    }
+
+    /// The group and entry index of every entry that isn't Moonlet's, in order.
+    private func otherPositions(_ groups: OrderedJSON?) -> [[Int]] {
+        guard case .array(let groups)? = groups else { return [] }
+        var positions: [[Int]] = []
+        for (groupIndex, group) in groups.enumerated() {
+            guard case .array(let entries)? = group["hooks"] else { continue }
+            for (entryIndex, entry) in entries.enumerated() where !ownership.owns(entry) {
+                positions.append([groupIndex, entryIndex])
+            }
+        }
+        return positions
+    }
+
     /// The command of Moonlet's first entry for each event, keyed by event name.
     static func installed(in hooks: [OrderedJSON.Member], ownership: HookOwnership) -> [String: String] {
         var installed: [String: String] = [:]

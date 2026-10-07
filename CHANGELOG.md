@@ -20,6 +20,10 @@ All notable changes to Moonlet are listed here. The format follows [Keep a Chang
 - Request cards park in place and take a click, which opens the agent's tab, so you never chase them; they catch up if you move far away.
 - The summon view shows every agent as a little companion: agents that need you sit closest to the middle, each lit like a moon by its progress, with a Next up card, finish estimates, a one-hour timeline, and keys 1–9, Return, and Esc.
 - Codex reports through hooks, the way Claude Code does. With Codex 0.153 or later, `moonlet install codex` adds Moonlet's hooks to `~/.codex/hooks.json`, so a Codex agent shows what it's doing, its plan's progress, and every permission request (`Wants to run npm install`), not just finished turns. Codex asks you once to trust the hooks. Older versions keep the `notify` chain, and an existing notify setting stays as a fallback without reporting a turn twice.
+- Codex milestones (commit, push, pull request) count only when the command's output shows the step went through, since Codex 0.154 sends no exit code: a rejected push or a commit with nothing to commit isn't one.
+- With Codex's automatic approval review, a permission request keeps the agent working as `Reviewing: run npm install` instead of waiting on you.
+- `moonlet doctor` warns when Codex may ask you to trust Moonlet's hooks again, and, on Codex 0.153 and 0.154, when a shell startup file uses the terminal in a way that can stall hooks.
+- `moonlet uninstall codex` says which of your own hooks Codex will ask you to trust again, and when another app's notifier still runs Moonlet. For older Codex versions, `moonlet install codex` leaves such a notifier as it is.
 
 ### Fixed
 

@@ -6,14 +6,16 @@ import Foundation
 /// Moonlet owns one matcher group per event, holding a single command:
 /// `{"hooks":[{"type":"command","command":"<moonlet> hook codex","timeout":5}]}`. Like
 /// Claude Code's, the hooks run synchronously, so their events arrive in order; each run
-/// writes nothing to stdout and exits 0 within a fraction of a second, so Codex neither
-/// shows it nor changes course because of it.
+/// writes nothing to stdout and exits 0 within a fraction of a second, so Codex never
+/// changes course because of it. The Codex TUI hides such quick, successful runs, but
+/// `codex exec` lists each one as a `hook: <Event>` line.
 ///
 /// Codex keys a hook's trust by file, event, and position, so Moonlet's groups go after
-/// any that are already there and the other hooks keep their trust. A file Moonlet
-/// creates starts with a `description` saying so, and uninstalling deletes it again once
-/// nothing else is left in it. Codex asks the user to trust new or changed hooks before it
-/// runs them; Moonlet never answers for the user.
+/// any that are already there and the other hooks keep their trust. Removing Moonlet's
+/// group moves the groups after it, and the plan says Codex will ask about those again. A
+/// file Moonlet creates starts with a `description` saying so, and uninstalling deletes
+/// it again once nothing else is left in it. Codex asks the user to trust new or changed
+/// hooks before it runs them; Moonlet never answers for the user.
 public enum CodexHooksInstaller {
     /// Every hook event Moonlet listens to, in the order they're written.
     public static let allEvents = [
@@ -30,6 +32,10 @@ public enum CodexHooksInstaller {
     /// The `description` of a hooks.json that Moonlet creates.
     public static let fileDescription = "Added by Moonlet, which only observes. Remove with: moonlet uninstall codex"
     private static let descriptionPrefix = "Added by Moonlet"
+
+    /// How to let Codex run new hooks, which it skips until the user trusts them. The
+    /// install command prints it, and the app shows it after connecting Codex.
+    public static let trustHint = "Codex runs new hooks once you trust them: it asks at startup, or type /hooks and press t."
 
     /// The words after the executable in Moonlet's hook command.
     private static let subcommand = "hook codex"
@@ -53,9 +59,12 @@ public enum CodexHooksInstaller {
             hooks = members
         }
 
-        var (updatedHooks, changes) = try table(moonletPath: moonletPath)
-            .update(hooks, wanted: action == .install ? allEvents : [])
+        let table = table(moonletPath: moonletPath)
+        var (updatedHooks, changes) = try table.update(hooks, wanted: action == .install ? allEvents : [])
         guard !changes.isEmpty else { return .unchanged(hooksText) }
+        if let note = retrustNote(table.movedEntries(from: hooks, to: updatedHooks)) {
+            changes.append(note)
+        }
         switch (hooksIndex, updatedHooks.isEmpty) {
         case (let index?, true):
             root.remove(at: index)
@@ -108,11 +117,21 @@ public enum CodexHooksInstaller {
         HookTable.installed(in: try hooksObject(hooksText), ownership: .anyMoonlet(subcommand))
     }
 
+    /// "Codex will ask you to trust 2 of your own hooks again: PreToolUse, Stop", for the
+    /// other hooks that moved, since Codex keys trust by position.
+    private static func retrustNote(_ moved: [(event: String, count: Int)]) -> String? {
+        guard !moved.isEmpty else { return nil }
+        let count = moved.map(\.count).reduce(0, +)
+        let which = count == 1 ? "one of your own hooks" : "\(count) of your own hooks"
+        return "Codex will ask you to trust \(which) again: \(moved.map(\.event).joined(separator: ", "))"
+    }
+
     // MARK: Trust
 
     /// Whether Codex runs one of Moonlet's hooks, as far as its config file shows.
     public enum Trust: Sendable, Equatable {
-        /// Codex holds a trust record for the hook. (If the hook changed since, Codex asks again.)
+        /// Codex holds a trust record for the hook. If the hook changed since it was
+        /// trusted, Codex asks again; `health` accounts for that.
         case trusted
         /// No trust record: Codex lists the hook for review and skips it until then.
         case untrusted
@@ -142,6 +161,41 @@ public enum CodexHooksInstaller {
             }
         }
         return result
+    }
+
+    /// Whether Codex runs Moonlet's hooks.
+    public enum Health: Sendable, Equatable {
+        /// A hook reported after hooks.json last changed, so Codex runs the hooks as they are.
+        case reporting
+        /// Every hook has a trust record, but none reported since hooks.json last changed.
+        /// If the change touched Moonlet's hooks, Codex asks to trust them again.
+        case mayAskAgain
+        /// These hooks have no trust record, so Codex skips them until the user trusts them.
+        case untrusted([String])
+        /// These hooks are turned off in Codex's `/hooks`.
+        case disabled([String])
+    }
+
+    /// Judges whether Codex runs Moonlet's hooks, from what its config records for each
+    /// (see `trust(hooksText:hooksPath:configText:)`), when hooks.json last changed, and
+    /// when a hook last reported (`CodexHookLedger.lastActivity`).
+    ///
+    /// A trust record holds a hash of the hook as it was trusted, in a format Codex doesn't
+    /// document, so a record alone can't show that Codex still runs the hook. A report
+    /// written after the file last changed can, since only hooks Codex runs report. That
+    /// also covers hooks Codex runs without a record this check can read.
+    public static func health(trust: [String: Trust], hooksModified: Date?, lastReport: Date?) -> Health {
+        let disabled = allEvents.filter { trust[$0] == .disabled }
+        if !disabled.isEmpty {
+            return .disabled(disabled)
+        }
+        let reportedSinceChange = lastReport.map { report in hooksModified.map { report > $0 } ?? true } ?? false
+        let untrusted = allEvents.filter { trust[$0] == .untrusted }
+        let installed = allEvents.filter { trust[$0] != nil }
+        if !untrusted.isEmpty, untrusted.count < installed.count || !reportedSinceChange {
+            return .untrusted(untrusted)
+        }
+        return reportedSinceChange ? .reporting : .mayAskAgain
     }
 
     /// `PermissionRequest` → `permission_request`, the event labels in Codex's hook keys.
