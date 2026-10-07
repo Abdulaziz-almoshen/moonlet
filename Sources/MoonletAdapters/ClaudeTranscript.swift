@@ -13,7 +13,8 @@ public enum ClaudeTranscript {
         do {
             let size = try handle.seekToEnd()
             try handle.seek(toOffset: size - min(size, UInt64(maxBytes)))
-            return String(decoding: try handle.readToEnd() ?? Data(), as: UTF8.self)
+            // Never more than `maxBytes`, even while the agent appends to the file.
+            return String(decoding: try handle.read(upToCount: maxBytes) ?? Data(), as: UTF8.self)
         } catch {
             return nil
         }

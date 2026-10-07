@@ -3,11 +3,14 @@ import MoonletAdapters
 import MoonletCore
 import MoonletIPC
 
-/// `moonlet hook claude-code` and `moonlet hook codex [--then <cmd> <args…>] <json>`.
+/// `moonlet hook claude-code`, `moonlet hook codex`, and
+/// `moonlet hook codex [--then <cmd> <args…>] <json>`.
 ///
-/// Agents run these on every step, so they never write to stdout (Claude Code may read
-/// it), always exit 0 (a failure must never block the agent), and give up on the app
-/// well within a third of a second.
+/// `hook claude-code` and a bare `hook codex` are hooks: they read one JSON payload from
+/// stdin. `hook codex` followed by arguments is Codex's notify program, which gets its
+/// payload as the last argument. Agents run these on every step, so they never write to
+/// stdout (an agent may read it as instructions), always exit 0 (a failure must never
+/// block the agent), and give up on the app well within a third of a second.
 enum HookCommand {
     /// Total time allowed for delivering events, measured from launch.
     private static let budget: TimeInterval = 0.28
@@ -29,8 +32,10 @@ enum HookCommand {
             if events.isEmpty, (try? JSONSerialization.jsonObject(with: input)) == nil {
                 log.write("claude-code: stdin isn't a JSON payload (\(input.count) bytes)")
             }
+        case "codex" where arguments.count == 1:
+            events = codexHookEvents(environment: environment, host: host, paths: paths, log: log)
         case "codex":
-            events = codexEvents(Array(arguments.dropFirst()), environment: environment, host: host, log: log)
+            events = codexNotifyEvents(Array(arguments.dropFirst()), environment: environment, host: host, paths: paths, log: log)
         default:
             log.write("Unknown hook \(arguments.first.map { "'\($0)'" } ?? "(none)")")
             events = []
@@ -45,10 +50,32 @@ enum HookCommand {
         exit(0)
     }
 
-    /// Codex appends its JSON payload as the last argument. A chained notify command is
-    /// started first, with the same payload, so Moonlet never delays it.
-    private static func codexEvents(
-        _ arguments: [String], environment: [String: String], host: HostInfo, log: HookLog
+    /// A Codex hook: the payload arrives on stdin. The ledger notes the session first, so
+    /// the notify call that follows a `Stop` finds the turn already reported.
+    private static func codexHookEvents(
+        environment: [String: String], host: HostInfo, paths: MoonletPaths, log: HookLog
+    ) -> [MoonletEvent] {
+        let input = StandardInput.read(limit: 64 * 1024 * 1024, timeout: 1)
+        let report = CodexHookAdapter.report(
+            hookInput: input, environment: environment, now: .now, host: host,
+            readTranscriptTail: CodexTranscript.readTail(atPath:))
+        guard let note = report.note else {
+            log.write("codex: stdin isn't a hook payload (\(input.count) bytes)")
+            return []
+        }
+        let ledger = CodexHookLedger(directory: paths.codexHooksDirectory)
+        ledger.write(note)
+        if report.hookEvent == "SessionStart" {
+            ledger.prune(now: .now)
+        }
+        return report.events
+    }
+
+    /// Codex's notify program: the payload is the last argument. A chained notify command
+    /// is started first, with the same payload, so Moonlet never delays it. Turns the
+    /// hooks already reported are skipped.
+    private static func codexNotifyEvents(
+        _ arguments: [String], environment: [String: String], host: HostInfo, paths: MoonletPaths, log: HookLog
     ) -> [MoonletEvent] {
         guard let payload = arguments.last else {
             log.write("codex: no JSON payload argument")
@@ -62,7 +89,10 @@ enum HookCommand {
                 log.write("codex: couldn't start the chained notify command: \(error)")
             }
         }
-        return CodexAdapter.events(notifyArgument: payload, environment: environment, now: .now, host: host)
+        let ledger = CodexHookLedger(directory: paths.codexHooksDirectory)
+        return CodexAdapter.events(notifyArgument: payload, environment: environment, now: .now, host: host) {
+            ledger.record(forThread: $0)
+        }
     }
 }
 

@@ -14,11 +14,15 @@ public struct InstallPlan: Sendable, Equatable {
     public let newText: String
     /// One line per change, for people. Empty when the file is already as wanted.
     public let changes: [String]
+    /// Whether applying the plan deletes the file, because only Moonlet's part was left.
+    /// `newText` is empty then.
+    public let removesFile: Bool
 
-    public init(originalText: String, newText: String, changes: [String]) {
+    public init(originalText: String, newText: String, changes: [String], removesFile: Bool = false) {
         self.originalText = originalText
         self.newText = newText
         self.changes = changes
+        self.removesFile = removesFile
     }
 
     /// A plan that leaves `text` alone.
@@ -32,7 +36,7 @@ public struct InstallPlan: Sendable, Equatable {
 /// What applying a plan did.
 public struct InstallResult: Sendable, Equatable {
     public let plan: InstallPlan
-    /// Whether the file was written. False for dry runs and for plans without changes.
+    /// Whether the file was written (or deleted). False for dry runs and for plans without changes.
     public let wroteFile: Bool
     /// Where the previous version of the file was saved. `nil` when nothing was written
     /// or the file didn't exist yet.

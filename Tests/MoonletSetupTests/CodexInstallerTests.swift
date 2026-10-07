@@ -230,6 +230,229 @@ struct CodexInstallerTests {
             try CodexInstaller.notifyStatus(configText: ourLine) == .installed(executable: moonlet, chained: []))
     }
 
+    // MARK: Moonlet inside another notifier
+
+    /// Another app's notifier that took over `notify` and keeps the previous command, JSON
+    /// encoded, in its own argument, the way some Codex companions do.
+    @Test func recognizesMoonletInsideAnotherNotifiersPreviousCommand() throws {
+        let client = "/Applications/Example Companion.app/Contents/MacOS/ExampleClient"
+        let previous = #"[\"\\/usr\\/local\\/bin\\/moonlet\",\"hook\",\"codex\",\"--then\",\"\\/usr\\/bin\\/say\",\"done\"]"#
+        let config = """
+            model = "gpt-5-codex"
+            notify = ["\(client)", "turn-ended", "--previous-notify", "\(previous)"]
+
+            """
+        #expect(
+            try CodexInstaller.notifyStatus(configText: config)
+                == .nested(notifier: [client, "turn-ended", "--previous-notify", #"["\/usr\/local\/bin\/moonlet","hook","codex","--then","\/usr\/bin\/say","done"]"#], executable: moonlet))
+        // Moonlet never edits another program's notify setting.
+        #expect(try !uninstall(config).hasChanges)
+    }
+
+    @Test(arguments: [
+        [#"/opt/wrapper"#, "--then", "/usr/local/bin/moonlet", "hook", "codex"],
+        [#"/opt/wrapper"#, "--exec", "/usr/local/bin/moonlet hook codex"],
+        [#"/opt/wrapper"#, "--exec", "'/usr/local/bin/moonlet' hook codex --then say"],
+        [#"/opt/wrapper"#, #"["/opt/inner", "--previous", "[\"/usr/local/bin/moonlet\", \"hook\", \"codex\"]"]"#],
+    ])
+    func recognizesMoonletNestedInOtherShapes(argv: [String]) throws {
+        let config = "notify = \(TOMLDocument.render(argv))\n"
+        guard case .nested(_, let executable) = try CodexInstaller.notifyStatus(configText: config) else {
+            Issue.record("Expected Moonlet to be recognized in \(argv)")
+            return
+        }
+        #expect(executable == moonlet)
+    }
+
+    @Test(arguments: [
+        ["/opt/wrapper", "--previous-notify", #"["/usr/bin/say","hook","codex"]"#],
+        ["/opt/wrapper", "moonlet-notes", "hook"],
+        ["/opt/wrapper", "not json [ ]"],
+    ])
+    func otherNotifiersStayForeign(argv: [String]) throws {
+        let config = "notify = \(TOMLDocument.render(argv))\n"
+        #expect(try CodexInstaller.notifyStatus(configText: config) == .foreign(argv))
+    }
+
+    // MARK: Hooks or notify
+
+    @Test(arguments: [
+        ("codex-cli 0.154.0", CodexInstaller.Mechanism.hooks),
+        ("codex-cli 0.153.0", .hooks),
+        ("codex-cli 1.0.0", .hooks),
+        ("codex-cli 0.152.9", .notify),
+        ("codex-cli 0.98.0", .notify),
+    ] as [(String, CodexInstaller.Mechanism)])
+    func theVersionPicksTheMechanism(version: String, expected: CodexInstaller.Mechanism) {
+        #expect(CodexInstaller.mechanism(forCodexVersion: version) == expected)
+    }
+
+    @Test(arguments: [nil, "", "codex-cli", "WARNING: something"] as [String?])
+    func anUnreadableVersionIsUnknown(version: String?) {
+        #expect(CodexInstaller.mechanism(forCodexVersion: version) == nil)
+    }
+
+    private func plans(
+        config: String, hooks: String = "", action: InstallAction = .install, version: String? = "codex-cli 0.154.0"
+    ) throws -> CodexInstaller.Plans {
+        try CodexInstaller.plans(configText: config, hooksText: hooks, moonletPath: moonlet, action: action, codexVersion: version)
+    }
+
+    @Test func withHooksMoonletLeavesNotifyAlone() throws {
+        let foreign = #"notify = ["notify-send", "Codex"]"# + "\n"
+        let nested = #"notify = ["/opt/wrapper", "--previous-notify", "[\"/old/moonlet\",\"hook\",\"codex\"]"]"# + "\n"
+        for config in ["", foreign, nested, ourLine + "\n", #"notify = "not an array""#] {
+            let plans = try plans(config: config)
+            #expect(plans.mechanism == .hooks)
+            #expect(!plans.config.hasChanges)
+            #expect(plans.config.newText == config)
+            #expect(plans.hooks.hasChanges)
+            #expect(plans.hooks.newText.contains("hook codex"))
+        }
+    }
+
+    @Test func withHooksAnEarlierNotifyChainFollowsMoonlet() throws {
+        let chained = try install(#"notify = ["notify-send", "Codex"]"# + "\n").newText
+        let plans = try CodexInstaller.plans(
+            configText: chained, hooksText: "", moonletPath: "/opt/homebrew/bin/moonlet", action: .install,
+            codexVersion: "codex-cli 0.154.0")
+        #expect(plans.config.changes == ["Point notify at /opt/homebrew/bin/moonlet"])
+        #expect(plans.hooks.newText.contains("/opt/homebrew/bin/moonlet hook codex"))
+    }
+
+    @Test func anOlderCodexGetsNotifyAndLosesMoonletsHooks() throws {
+        let hooks = try CodexHooksInstaller.plan(hooksText: "", moonletPath: moonlet, action: .install).newText
+        let plans = try plans(config: "model = \"o3\"\n", hooks: hooks, version: "codex-cli 0.140.0")
+        #expect(plans.mechanism == .notify)
+        #expect(plans.config.newText == "model = \"o3\"\n" + ourLine + "\n")
+        #expect(plans.hooks.removesFile)
+    }
+
+    @Test func anUnknownVersionKeepsWhatIsInstalled() throws {
+        let fresh = try plans(config: "", version: nil)
+        #expect(fresh.mechanism == .notify)
+        #expect(fresh.config.newText == ourLine + "\n")
+        #expect(!fresh.hooks.hasChanges)
+
+        let hooks = try CodexHooksInstaller.plan(hooksText: "", moonletPath: moonlet, action: .install).newText
+        let hooked = try plans(config: "", hooks: hooks, version: nil)
+        #expect(hooked.mechanism == .hooks)
+        #expect(!hooked.config.hasChanges && !hooked.hooks.hasChanges)
+    }
+
+    // MARK: Another app's notifier that runs Moonlet
+
+    private let companion = "/Applications/Example Companion.app/Contents/MacOS/ExampleClient"
+
+    private var nestedConfig: String {
+        "notify = \(TOMLDocument.render([companion, "turn-ended", "--previous-notify", #"["/usr/local/bin/moonlet","hook","codex"]"#]))\n"
+    }
+
+    @Test func anOlderCodexKeepsANotifierThatAlreadyRunsMoonlet() throws {
+        let plans = try CodexInstaller.plans(
+            configText: nestedConfig, hooksText: "", moonletPath: moonlet, action: .install, codexVersion: "codex-cli 0.140.0",
+            isExecutable: { $0 == moonlet })
+        #expect(plans.mechanism == .notify)
+        #expect(!plans.config.hasChanges && plans.config.newText == nestedConfig)
+        #expect(plans.notes == ["Moonlet already runs through Example Companion's notify command, so notify stays as it is."])
+    }
+
+    @Test func anOlderCodexChainsANotifierWhoseMoonletIsGone() throws {
+        let plans = try CodexInstaller.plans(
+            configText: nestedConfig, hooksText: "", moonletPath: "/opt/homebrew/bin/moonlet", action: .install,
+            codexVersion: "codex-cli 0.140.0", isExecutable: { _ in false })
+        #expect(plans.config.changes == ["Chain the existing notify command (\(companion)) through /opt/homebrew/bin/moonlet"])
+        #expect(plans.notes.isEmpty)
+    }
+
+    @Test func uninstallSaysMoonletStillRunsInsideAnotherNotifier() throws {
+        let removed = try plans(config: nestedConfig, action: .uninstall)
+        #expect(!removed.config.hasChanges)
+        #expect(
+            removed.notes == [
+                "Moonlet still runs inside Example Companion's notify command, which Moonlet never edits. "
+                    + "To stop it, remove /usr/local/bin/moonlet hook codex from that command in config.toml."
+            ])
+        // Moonlet's own chain comes out without a note.
+        let chained = try install(#"notify = ["notify-send", "Codex"]"# + "\n").newText
+        #expect(try plans(config: chained, action: .uninstall).notes.isEmpty)
+    }
+
+    @Test(arguments: [
+        ("/Applications/Example Companion.app/Contents/MacOS/ExampleClient", "Example Companion"),
+        ("/opt/wrapper", "wrapper"),
+        ("notify-send", "notify-send"),
+        ("/Users/example/.app/bin/notify", "notify"),
+    ])
+    func programsAreNamedAfterTheirApp(path: String, name: String) {
+        #expect(CodexInstaller.programName(path) == name)
+    }
+
+    // MARK: Hooks on the terminal
+
+    @Test(arguments: [
+        ("codex-cli 0.153.0", true), ("codex-cli 0.154.2", true), ("codex-cli 0.155.0", false), ("codex-cli 1.0.0", false),
+        ("codex-cli 0.152.0", false), (nil, false),
+    ] as [(String?, Bool)])
+    func codex153And154RunHooksOnTheTerminal(version: String?, attached: Bool) {
+        #expect(CodexInstaller.runsHooksOnTheTerminal(codexVersion: version) == attached)
+    }
+
+    @Test func installThenUninstallRestoresBothFiles() throws {
+        let config = """
+            model = "gpt-5-codex"
+            notify = ["/Applications/Example.app/Contents/MacOS/client", "turn-ended"]
+
+            [features]
+            web_search = true
+
+            """
+        let installed = try plans(config: config)
+        let removed = try plans(config: installed.config.newText, hooks: installed.hooks.newText, action: .uninstall)
+        #expect(removed.config.newText == config)
+        #expect(!removed.config.hasChanges)
+        #expect(removed.hooks.removesFile)
+    }
+
+    @Test func uninstallAlsoRemovesAnEarlierNotifyChain() throws {
+        let original = #"notify = ["notify-send", "Codex"]"# + "\n"
+        let chained = try install(original).newText
+        let installed = try plans(config: chained)
+        #expect(installed.config.newText == chained)  // Kept as a fallback.
+        let removed = try plans(config: chained, hooks: installed.hooks.newText, action: .uninstall)
+        #expect(removed.config.newText == original)
+        #expect(removed.hooks.removesFile)
+    }
+
+    @Test func applyWritesHooksAndLeavesTheConfigByteForByte() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let config = directory.appending(path: "config.toml")
+        let hooks = directory.appending(path: "hooks.json")
+        let original = "# Codex\nmodel = \"o3\"   # fast\nnotify = [\"say\", \"done\"]\n"
+        try Data(original.utf8).write(to: config)
+
+        let dryRun = try CodexInstaller.apply(
+            configURL: config, hooksURL: hooks, moonletPath: moonlet, action: .install, codexVersion: "codex-cli 0.154.0",
+            dryRun: true)
+        #expect(dryRun.mechanism == .hooks && dryRun.hooks.plan.hasChanges && !dryRun.hooks.wroteFile)
+        #expect(!FileManager.default.fileExists(atPath: hooks.path))
+
+        let installed = try CodexInstaller.apply(
+            configURL: config, hooksURL: hooks, moonletPath: moonlet, action: .install, codexVersion: "codex-cli 0.154.0")
+        #expect(installed.hooks.wroteFile && !installed.config.wroteFile)
+        #expect(try CodexHooksInstaller.installedHooks(hooksText: String(contentsOf: hooks, encoding: .utf8)).count == 8)
+        #expect(try String(contentsOf: config, encoding: .utf8) == original)
+
+        let removed = try CodexInstaller.apply(
+            configURL: config, hooksURL: hooks, moonletPath: moonlet, action: .uninstall, codexVersion: nil)
+        #expect(removed.hooks.wroteFile)
+        #expect(!FileManager.default.fileExists(atPath: hooks.path))
+        #expect(try String(contentsOf: config, encoding: .utf8) == original)
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
+        #expect(leftovers.count == 2 && leftovers[0] == "config.toml" && leftovers[1].hasPrefix("hooks.json.moonlet-backup-"))
+    }
+
     @Test func applyWritesABackupFirstAndDryRunWritesNothing() throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -272,6 +495,44 @@ struct TOMLDocumentTests {
 
     @Test func rendersBasicStrings() {
         #expect(TOMLDocument.render(["a b", "q\"", "back\\", "tab\t", "\u{7F}"]) == #"["a b", "q\"", "back\\", "tab\t", "\u007F"]"#)
+    }
+
+    @Test func entriesCoverEveryTable() {
+        let text = """
+            model = "o3" # comment
+            [hooks.state."/x/hooks.json:stop:0:0"]
+            trusted_hash = "sha256:1"
+            [ 'quoted.table' . inner ]
+            a.b = { c = 1 }
+            list = [
+              "x", # still the value
+            ]
+            [[profiles.list]]
+            name = "first"
+            """
+        let entries = TOMLDocument.entries(in: text)
+        #expect(entries.map(\.path) == [
+            ["model"], ["hooks", "state", "/x/hooks.json:stop:0:0", "trusted_hash"], ["quoted.table", "inner", "a", "b"],
+            ["quoted.table", "inner", "list"], ["profiles", "list", "name"],
+        ])
+        #expect(entries.map { String($0.value) } == [#""o3""#, #""sha256:1""#, "{ c = 1 }", "[\n  \"x\", # still the value\n]", #""first""#])
+    }
+
+    @Test func entriesStopAtTheFirstUnreadableLine() {
+        let entries = TOMLDocument.entries(in: "a = 1\n[broken\nb = 2\n")
+        #expect(entries.map(\.path) == [["a"]])
+    }
+
+    @Test(arguments: [
+        ("a", ["a"]), ("a.b", ["a", "b"]), (#" "x.y" . 'z' "#, ["x.y", "z"]), ("bare-key_1", ["bare-key_1"]),
+    ])
+    func parsesDottedKeys(key: String, expected: [String]) {
+        #expect(TOMLDocument.keyPath(Substring(key)) == expected)
+    }
+
+    @Test(arguments: ["", "a.", ".a", "a b", "a..b", "ö"])
+    func rejectsMalformedKeys(key: String) {
+        #expect(TOMLDocument.keyPath(Substring(key)) == nil)
     }
 
     @Test func findsTopLevelKeysOnly() throws {

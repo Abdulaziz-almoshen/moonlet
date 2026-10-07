@@ -35,7 +35,7 @@ let package = Package(
         // The menu bar app. `scripts/build-app.sh` packages it as Moonlet.app.
         .executableTarget(
             name: "MoonletApp",
-            dependencies: ["MoonletCore", "MoonletIPC", "MoonletBrain"]
+            dependencies: ["MoonletCore", "MoonletIPC", "MoonletBrain", "MoonletSetup"]
         ),
 
         // MARK: Tests

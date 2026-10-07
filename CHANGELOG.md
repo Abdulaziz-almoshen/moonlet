@@ -19,6 +19,11 @@ All notable changes to Moonlet are listed here. The format follows [Keep a Chang
 - The companion: a tiny moon that pops out of the pointer with each card, makes a face that fits what the agent said (celebrating a deploy, cheeky about a typo, nervous about `rm -rf` with an orange **!** sign, teary about a failure, worried when finished work reports a problem), and fades when the card goes. It never comes out without a card and stays on the pointer's screen. Every appearance varies, with an occasional surprise; Reduce Motion keeps it still. Turn it off in Settings to get the cards exactly as before.
 - Request cards stop in place while they show, so you never chase them, and a click on one opens the agent's tab. They take a click only on the card itself, once the pointer rests on it, and never get in the way of a scroll. Answer the agent while its card shows and the companion thanks you; otherwise the card fades like any other, and the reminders bring it back.
 - The summon view shows every agent as a little companion: agents that need you sit closest to the middle, each lit like a moon by its progress, with a Next up card, finish estimates, and a timeline of the last hour. Opened from the keyboard, it takes 1–9, Return, and Esc, and any other key closes it; opened with a circle, it never takes your typing.
+- Codex reports through hooks, the way Claude Code does. With Codex 0.153 or later, `moonlet install codex` adds Moonlet's hooks to `~/.codex/hooks.json`, so a Codex agent shows what it's doing, its plan's progress, and every permission request (`Wants to run npm install`), not just finished turns. Codex asks you once to trust the hooks. Older versions keep the `notify` chain, and an existing notify setting stays as a fallback without reporting a turn twice.
+- Codex milestones (commit, push, pull request) count only when the command's output shows the step went through, since Codex 0.154 sends no exit code: a rejected push or a commit with nothing to commit isn't one.
+- With Codex's automatic approval review, a permission request keeps the agent working as `Reviewing: run npm install` instead of waiting on you.
+- `moonlet doctor` warns when Codex may ask you to trust Moonlet's hooks again, and, on Codex 0.153 and 0.154, when a shell startup file uses the terminal in a way that can stall hooks.
+- `moonlet uninstall codex` says which of your own hooks Codex will ask you to trust again, and when another app's notifier still runs Moonlet. For older Codex versions, `moonlet install codex` leaves such a notifier as it is.
 
 ### Fixed
 
@@ -26,3 +31,4 @@ All notable changes to Moonlet are listed here. The format follows [Keep a Chang
 - The pointer's hotspot now sits at the arrow's visible tip.
 - The drawn pointer and cards could freeze on screen after the display slept. They now follow mouse events and a timer instead of the display's refresh, hide while the screen sleeps or is locked, and restart on wake.
 - An unanswered question no longer keeps the pointer yellow indefinitely; after 10 minutes only its reminders color it.
+- `moonlet doctor` said Moonlet was missing from Codex's `notify` when another app's notifier ran it, for example through `--previous-notify`. It now finds Moonlet there too.

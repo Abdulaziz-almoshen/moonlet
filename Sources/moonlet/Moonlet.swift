@@ -69,7 +69,7 @@ enum Moonlet {
           install claude-code|codex      Connect an agent [--dry-run] [--settings PATH | --config PATH]
           uninstall claude-code|codex    Disconnect an agent (same options)
           doctor                         Check the app, the integrations, and Ollama
-          hook claude-code|codex         Entry point for agent hooks; not for direct use
+          hook claude-code|codex         Entry point for agent hooks and Codex's notify; not for direct use
           version                        Print the version
           help                           Show this help
 

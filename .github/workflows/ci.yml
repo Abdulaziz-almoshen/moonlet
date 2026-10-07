@@ -33,6 +33,13 @@ jobs:
           output="$(echo "$payload" | build/Moonlet.app/Contents/Helpers/moonlet hook claude-code)"
           test -z "$output"
           test -s "$MOONLET_HOME/spool.jsonl"
+          payload='{"session_id":"ci","turn_id":"1","hook_event_name":"Stop","cwd":"/tmp/ci","last_assistant_message":"Done."}'
+          output="$(printf '%s' "$payload" | build/Moonlet.app/Contents/Helpers/moonlet hook codex 2>&1)"
+          test -z "$output"
+          test "$(wc -l < "$MOONLET_HOME/spool.jsonl")" -eq 2
+          # Codex's notify call for the same turn is skipped.
+          build/Moonlet.app/Contents/Helpers/moonlet hook codex '{"type":"agent-turn-complete","thread-id":"ci","turn-id":"1"}'
+          test "$(wc -l < "$MOONLET_HOME/spool.jsonl")" -eq 2
       - uses: actions/upload-artifact@v4
         with:
           name: Moonlet.app

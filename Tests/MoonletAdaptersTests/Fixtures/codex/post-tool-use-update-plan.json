@@ -1,0 +1,20 @@
+{
+  "session_id": "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+  "turn_id": "7",
+  "transcript_path": "/Users/example/.codex/sessions/2026/10/01/rollout-2026-10-01T09-30-00-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl",
+  "cwd": "/Users/example/code/payments",
+  "hook_event_name": "PostToolUse",
+  "model": "gpt-5-codex",
+  "permission_mode": "default",
+  "tool_name": "update_plan",
+  "tool_input": {
+    "explanation": "Starting on the client",
+    "plan": [
+      {"step": "Add a Backoff type", "status": "completed"},
+      {"step": "Retry failed requests", "status": "in_progress"},
+      {"step": "Cover retries in tests", "status": "pending"}
+    ]
+  },
+  "tool_response": "Plan updated",
+  "tool_use_id": "call_0a1b2c"
+}

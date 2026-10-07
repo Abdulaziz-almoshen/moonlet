@@ -64,6 +64,76 @@ struct TOMLDocument {
         self.topLevel = topLevel
     }
 
+    // MARK: Every table
+
+    /// A key-value pair anywhere in a file.
+    struct Entry {
+        /// The full key: the table header's parts followed by the key's own dotted parts.
+        let path: [String]
+        /// The value as written.
+        let value: Substring
+    }
+
+    /// Every key-value pair in `text`, with table headers applied: under `[a."b"]`, the
+    /// line `c.d = 1` has the path `["a", "b", "c", "d"]`. Entries in an array of tables
+    /// share the header's path. Best effort: scanning stops at the first line it can't read.
+    static func entries(in text: String) -> [Entry] {
+        var cursor = Cursor(text)
+        var table: [String] = []
+        var entries: [Entry] = []
+        while let character = cursor.skipBlanks() {
+            switch character {
+            case "\n", "\r":
+                cursor.advance()
+            case "#":
+                cursor.skipComment()
+            case "[":
+                guard let header = try? cursor.scanHeader(), let path = keyPath(header) else { return entries }
+                table = path
+            default:
+                let keyStart = cursor.index
+                guard (try? cursor.scanKey()) != nil, let key = keyPath(text[keyStart..<cursor.index]) else { return entries }
+                cursor.advance()  // "="
+                _ = cursor.skipBlanks()
+                let valueStart = cursor.index
+                guard (try? cursor.scanValue()) != nil else { return entries }
+                let value = text[valueStart..<cursor.index]
+                guard (try? cursor.finishLine()) != nil else { return entries }
+                let trimmedEnd = value.lastIndex { $0 != " " && $0 != "\t" }.map { value.index(after: $0) } ?? valueStart
+                entries.append(Entry(path: table + key, value: text[valueStart..<trimmedEnd]))
+            }
+        }
+        return entries
+    }
+
+    /// The parts of a dotted key such as `hooks.state."a.b"`, or `nil` if it isn't one.
+    static func keyPath(_ key: Substring) -> [String]? {
+        var cursor = Cursor(String(key))
+        var parts: [String] = []
+        while true {
+            guard let scalar = cursor.skipBlanks() else { return nil }
+            if scalar == "\"" || scalar == "'" {
+                guard let part = try? cursor.parseString() else { return nil }
+                parts.append(part)
+            } else {
+                var part = ""
+                while let scalar = cursor.current, scalar.isASCII,
+                    CharacterSet.alphanumerics.contains(scalar) || scalar == "_" || scalar == "-"
+                {
+                    part.unicodeScalars.append(scalar)
+                    cursor.advance()
+                }
+                guard !part.isEmpty else { return nil }
+                parts.append(part)
+            }
+            switch cursor.skipBlanks() {
+            case nil: return parts
+            case "."?: cursor.advance()
+            default: return nil
+            }
+        }
+    }
+
     // MARK: String arrays
 
     /// The strings of an array value such as `["a", 'b']`, or `nil` if the value is
@@ -224,6 +294,37 @@ private struct Cursor {
             }
         }
         guard depth == 0 else { throw error("Unterminated array or inline table") }
+    }
+
+    /// Moves past a table header such as `[a.b]` or `[[a]]` and the rest of its line, and
+    /// returns the key between the brackets.
+    mutating func scanHeader() throws -> Substring {
+        advance()  // "["
+        let isArray = current == "["
+        if isArray {
+            advance()
+        }
+        let start = index
+        while let scalar = current {
+            switch scalar {
+            case "\"", "'":
+                try skipString()
+            case "]":
+                let key = text[start..<index]
+                advance()
+                if isArray {
+                    guard current == "]" else { throw error("Expected ']]'") }
+                    advance()
+                }
+                try finishLine()
+                return key
+            case "\n", "\r":
+                throw error("Unterminated table header")
+            default:
+                advance()
+            }
+        }
+        throw error("Unterminated table header")
     }
 
     /// Consumes trailing blanks, an optional comment, and the line break.

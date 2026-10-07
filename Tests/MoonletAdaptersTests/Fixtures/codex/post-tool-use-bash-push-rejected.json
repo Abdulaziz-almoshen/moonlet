@@ -1,0 +1,15 @@
+{
+  "session_id": "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+  "turn_id": "7",
+  "transcript_path": "/Users/example/.codex/sessions/2026/10/01/rollout-2026-10-01T09-30-00-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl",
+  "cwd": "/Users/example/code/payments",
+  "hook_event_name": "PostToolUse",
+  "model": "gpt-5-codex",
+  "permission_mode": "default",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "git push"
+  },
+  "tool_response": "To github.com:example/payments.git\n ! [rejected]        retries -> retries (fetch first)\nerror: failed to push some refs to 'github.com:example/payments.git'\nhint: Updates were rejected because the remote contains work that you do not\nhint: have locally. Integrate the remote changes (e.g.\nhint: 'git pull ...') before pushing again.\nhint: See the 'Note about fast-forwards' in 'git push --help' for details.\n",
+  "tool_use_id": "call_8a9b0c"
+}
