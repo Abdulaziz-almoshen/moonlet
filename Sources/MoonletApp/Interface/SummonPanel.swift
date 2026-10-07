@@ -2,28 +2,6 @@ import AppKit
 import MoonletBrain
 import SwiftUI
 
-/// One agent as Moonlet shows it in the summon view and the menu.
-struct AgentRow: Identifiable, Equatable {
-    var id: String
-    var label: String
-    /// Where the agent runs: iTerm, Terminal, VS Code, Claude.
-    var place: String
-    var activity: AgentActivity
-    /// Completed share of the agent's own task list, when it keeps one.
-    var progress: Double?
-    /// A few words about what it's doing or did.
-    var status: String
-    /// When the agent entered its current state.
-    var since: Date
-}
-
-/// Everything the summon view shows.
-struct SummonContent: Equatable {
-    var agents: [AgentRow] = []
-    var earlier: [Moment] = []
-    var suggestion: String?
-}
-
 /// Every session at a glance, opened by a small circle, the shortcut, or the menu.
 /// Unlike cards, this panel is clickable: open an agent, or click anywhere else to close.
 @MainActor
