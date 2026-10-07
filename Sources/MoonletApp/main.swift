@@ -34,6 +34,12 @@ if let index = CommandLine.arguments.firstIndex(of: "--render-docs") {
     exit(0)
 }
 
+if let index = CommandLine.arguments.firstIndex(of: "--render-companion") {
+    let directory = CommandLine.arguments.dropFirst(index + 1).first ?? "docs/images"
+    MainActor.assumeIsolated { CompanionSheet.render(to: URL(fileURLWithPath: directory)) }
+    exit(0)
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--render-film") {
     let directory = CommandLine.arguments.dropFirst(index + 1).first ?? "/tmp/moonlet-frames"
     MainActor.assumeIsolated { DemoFilm.render(to: URL(fileURLWithPath: directory)) }
