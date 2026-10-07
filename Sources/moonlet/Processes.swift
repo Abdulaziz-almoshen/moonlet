@@ -1,5 +1,6 @@
 import Foundation
 import MoonletIPC
+import MoonletSetup
 
 /// Starting other programs.
 enum Processes {
@@ -23,9 +24,21 @@ enum Processes {
     /// The first line of a program's standard output, or `nil` if it fails or takes longer
     /// than `timeout`.
     static func firstLine(of executable: String, arguments: [String], timeout: TimeInterval) -> String? {
+        output(of: executable, arguments: arguments, timeout: timeout)?
+            .split(whereSeparator: \.isNewline).first.map(String.init)
+    }
+
+    /// A program's standard output, or `nil` if it fails or takes longer than `timeout`.
+    /// `environment` replaces this process's environment when given.
+    static func output(
+        of executable: String, arguments: [String], environment: [String: String]? = nil, timeout: TimeInterval
+    ) -> String? {
         let process = Process()
         process.executableURL = URL(filePath: executable)
         process.arguments = arguments
+        if let environment {
+            process.environment = environment
+        }
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
@@ -43,13 +56,26 @@ enum Processes {
             process.terminate()
             return nil
         }
-        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        return text.split(whereSeparator: \.isNewline).first.map(String.init)
+        return String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
     }
 
     /// The installed Claude Code version, such as `"2.1.290 (Claude Code)"`.
     static func claudeVersion(environment: [String: String]) -> String? {
         Locations.claudeExecutable(environment: environment)
             .flatMap { firstLine(of: $0, arguments: ["--version"], timeout: 3) }
+    }
+
+    /// The installed Codex version, such as `"codex-cli 0.154.0"`.
+    static func codexVersion(environment: [String: String]) -> String? {
+        guard let codex = Locations.codexExecutable(environment: environment) else { return nil }
+        // npm installs codex as a Node script (`#!/usr/bin/env node`), so make sure `node`
+        // is found: it sits beside the link, or in Homebrew's directory.
+        var environment = environment
+        let directory = URL(filePath: codex).deletingLastPathComponent().path
+        let path = [directory, environment["PATH"] ?? "", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+        environment["PATH"] = path.filter { !$0.isEmpty }.joined(separator: ":")
+        let text = output(of: codex, arguments: ["--version"], environment: environment, timeout: 5)
+        return text?.split(whereSeparator: \.isNewline).map(String.init)
+            .first { CodexInstaller.mechanism(forCodexVersion: $0) != nil }
     }
 }

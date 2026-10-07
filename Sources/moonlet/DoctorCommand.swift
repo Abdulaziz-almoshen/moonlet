@@ -1,4 +1,5 @@
 import Foundation
+import MoonletAdapters
 import MoonletIPC
 import MoonletSetup
 
@@ -25,12 +26,10 @@ enum DoctorCommand {
             ?? Locations.codexConfig(environment: environment)
         try arguments.finish()
 
-        let checks = [
-            checkApp(paths: paths),
-            checkClaudeCode(settings: settings, environment: environment),
-            checkCodex(config: config),
-            await checkOllama(),
-        ]
+        let codex = checkCodex(
+            config: config, ledger: CodexHookLedger(directory: paths.codexHooksDirectory), environment: environment)
+        let checks = [checkApp(paths: paths), checkClaudeCode(settings: settings, environment: environment)]
+            + codex + [await checkOllama()]
         for (outcome, message) in checks {
             print("\(outcome.symbol) \(message)")
         }
@@ -71,29 +70,104 @@ enum DoctorCommand {
         return (.pass, "Claude Code: \(hooks.count) hooks installed in \(path)")
     }
 
-    private static func checkCodex(config: URL) -> (Outcome, String) {
-        let path = Console.displayPath(config.path)
-        guard FileManager.default.fileExists(atPath: config.deletingLastPathComponent().path) else {
-            return (.skip, "Codex: not set up (no \(Console.displayPath(config.deletingLastPathComponent().path)))")
+    /// One line for Codex's hooks and, when it matters, one for its notify setting.
+    private static func checkCodex(
+        config: URL, ledger: CodexHookLedger, environment: [String: String]
+    ) -> [(Outcome, String)] {
+        let directory = config.deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return [(.skip, "Codex: not set up (no \(Console.displayPath(directory.path)))")]
         }
-        let status: CodexInstaller.NotifyStatus
+        let hooksFile = Locations.codexHooks(besideConfig: config)
+        let configText = (try? String(contentsOf: config, encoding: .utf8)) ?? ""
+        let hooksText = (try? String(contentsOf: hooksFile, encoding: .utf8)) ?? ""
+        let version = Processes.codexVersion(environment: environment)
+        let mechanism = CodexInstaller.mechanism(forCodexVersion: version)
+        let name = version?.split(separator: " ").last.map { "Codex \($0)" } ?? "Codex"
+
+        let hooks: [String: String]
+        let notify: CodexInstaller.NotifyStatus
         do {
-            status = try CodexInstaller.notifyStatus(configText: (try? String(contentsOf: config, encoding: .utf8)) ?? "")
+            hooks = try CodexHooksInstaller.installedHooks(hooksText: hooksText)
+            notify = try CodexInstaller.notifyStatus(configText: configText)
         } catch {
-            return (.fail, "Codex: \(error)")
+            return [(.fail, "Codex: \(error)")]
         }
-        switch status {
-        case .notConfigured:
-            return (.fail, "Codex: notify isn't set in \(path). Run: moonlet install codex")
-        case .foreign(let argv):
-            return (.fail, "Codex: notify runs \(argv.first ?? "nothing") without Moonlet. Run: moonlet install codex")
+
+        var lines: [(Outcome, String)] = []
+        if !hooks.isEmpty {
+            lines.append(
+                checkCodexHooks(
+                    hooks, name: name, mechanism: mechanism, hooksFile: hooksFile, hooksText: hooksText,
+                    configText: configText, ledger: ledger))
+        } else if mechanism == .hooks {
+            lines.append((.fail, "\(name): no Moonlet hooks in \(Console.displayPath(hooksFile.path)). Run: moonlet install codex"))
+        }
+
+        // Notify matters when there are no hooks; with hooks it's only a fallback.
+        let needsNotify = hooks.isEmpty && mechanism != .hooks
+        switch notify {
+        case .notConfigured where needsNotify:
+            lines.append((.fail, "\(name): notify isn't set in \(Console.displayPath(config.path)). Run: moonlet install codex"))
+        case .foreign(let argv) where needsNotify:
+            lines.append((.fail, "\(name): notify runs \(argv.first ?? "nothing") without Moonlet. Run: moonlet install codex"))
+        case .notConfigured, .foreign:
+            break
         case .installed(let executable, let chained):
-            guard FileManager.default.isExecutableFile(atPath: executable) else {
-                return (.fail, "Codex: notify runs \(executable), which isn't executable. Run: moonlet install codex")
-            }
             let then = chained.first.map { ", then \(($0 as NSString).lastPathComponent)" } ?? ""
-            return (.pass, "Codex: notify runs Moonlet\(then)")
+            lines.append(notifyLine(name, "notify runs Moonlet\(then)", executable: executable, primary: needsNotify, fixable: true))
+        case .nested(let notifier, let executable):
+            let outer = notifier.first.map { ($0 as NSString).lastPathComponent } ?? "another program"
+            // Moonlet never edits another program's notify, so only a notify install (which chains it) helps.
+            lines.append(
+                notifyLine(name, "notify runs Moonlet through \(outer)", executable: executable, primary: needsNotify, fixable: needsNotify))
         }
+        return lines
+    }
+
+    /// The notify line: a pass when notify is how Moonlet hears from Codex, otherwise a note.
+    private static func notifyLine(
+        _ name: String, _ description: String, executable: String, primary: Bool, fixable: Bool
+    ) -> (Outcome, String) {
+        guard FileManager.default.isExecutableFile(atPath: executable) else {
+            let fix = fixable ? " Run: moonlet install codex" : ""
+            return (primary ? .fail : .skip, "\(name): \(description) at \(executable), which isn't executable.\(fix)")
+        }
+        return primary ? (.pass, "\(name): \(description)") : (.skip, "\(name): \(description), as a fallback")
+    }
+
+    private static func checkCodexHooks(
+        _ hooks: [String: String], name: String, mechanism: CodexInstaller.Mechanism?, hooksFile: URL, hooksText: String,
+        configText: String, ledger: CodexHookLedger
+    ) -> (Outcome, String) {
+        let path = Console.displayPath(hooksFile.path)
+        let minimum = CodexInstaller.minimumHooksVersion.map(String.init).joined(separator: ".")
+        if mechanism == .notify {
+            return (.fail, "\(name): Moonlet's hooks need Codex \(minimum) or later. Run: moonlet install codex")
+        }
+        let missing = CodexHooksInstaller.allEvents.filter { hooks[$0] == nil }
+        if !missing.isEmpty {
+            return (.fail, "\(name): hooks missing for \(missing.joined(separator: ", ")). Run: moonlet install codex")
+        }
+        if let command = Set(hooks.values).first(where: { !FileManager.default.isExecutableFile(atPath: executable(inCommand: $0)) }) {
+            return (.fail, "\(name): the hook runs \(executable(inCommand: command)), which isn't executable. Run: moonlet install codex")
+        }
+
+        let trust = CodexHooksInstaller.trust(hooksText: hooksText, hooksPath: hooksFile.path, configText: configText)
+        let disabled = CodexHooksInstaller.allEvents.filter { trust[$0] == .disabled }
+        let untrusted = CodexHooksInstaller.allEvents.filter { trust[$0] == .untrusted }
+        let lastReport = ledger.lastActivity
+        if let event = disabled.first {
+            let which = disabled.count == 1 ? "Moonlet's \(event) hook is" : "\(disabled.count) of Moonlet's hooks are"
+            return (.fail, "\(name): \(which) turned off. Turn \(disabled.count == 1 ? "it" : "them") on in Codex's /hooks.")
+        }
+        if !untrusted.isEmpty, untrusted.count < hooks.count || lastReport == nil {
+            let which = untrusted.count == hooks.count ? "Moonlet's hooks aren't" : "\(untrusted.count) of Moonlet's \(hooks.count) hooks aren't"
+            return (.fail, "\(name): \(which) trusted yet. In Codex, type /hooks and press t.")
+        }
+        let age = lastReport.map { Console.age(since: $0) }
+        let reported = age.map { "last report \($0 == "now" ? "just now" : $0)" } ?? "no session has reported yet"
+        return (.pass, "\(name): \(hooks.count) hooks in \(path), \(reported)")
     }
 
     /// Ollama is optional; the app can use it to condense summaries.

@@ -9,16 +9,18 @@ enum Integrations {
         contents(of: "~/.claude/settings.json")?.contains("hook claude-code") == true
     }
 
+    /// Moonlet's hooks in `hooks.json`, or (for Codex before 0.153) its notify command.
     static var isCodexConnected: Bool {
-        contents(of: "~/.codex/config.toml")?.contains("\"hook\", \"codex\"") == true
+        contents(of: "~/.codex/hooks.json")?.contains("hook codex") == true
+            || contents(of: "~/.codex/config.toml")?.contains("\"hook\", \"codex\"") == true
     }
 
     static func connectClaudeCode() {
-        connect(target: "claude-code", name: "Claude Code", file: "~/.claude/settings.json")
+        connect(target: "claude-code", name: "Claude Code")
     }
 
     static func connectCodex() {
-        connect(target: "codex", name: "Codex", file: "~/.codex/config.toml")
+        connect(target: "codex", name: "Codex")
     }
 
     /// The `moonlet` command: `Contents/Helpers` in the app bundle (APFS is usually
@@ -32,7 +34,7 @@ enum Integrations {
         return candidates.compactMap { $0?.path }.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    private static func connect(target: String, name: String, file: String) {
+    private static func connect(target: String, name: String) {
         NSApp.activate()
         guard let command = commandPath else {
             show("The moonlet command is missing", "Reinstall Moonlet, or run `moonlet install \(target)` from a terminal.")
@@ -42,7 +44,7 @@ enum Integrations {
         let confirm = NSAlert()
         confirm.messageText = "Connect \(name)?"
         confirm.informativeText = """
-            Moonlet will add its hooks to \(file) and keep a backup next to it. Your other settings stay as they are.
+            Moonlet will make the changes below and back up any file it edits. Your other settings stay as they are.
 
             \(preview.output.trimmingCharacters(in: .whitespacesAndNewlines).prefix(900))
             """
@@ -51,7 +53,9 @@ enum Integrations {
         guard confirm.runModal() == .alertFirstButtonReturn else { return }
         let result = run(command, ["install", target])
         if result.status == 0 {
-            show("\(name) connected", "New \(name) sessions now report to Moonlet. Sessions already open start reporting after a restart.")
+            // Codex skips new hooks until you trust them; the command says how.
+            let nextStep = result.output.split(separator: "\n").first { $0.contains("/hooks") }.map { "\n\n\($0)" } ?? ""
+            show("\(name) connected", "New \(name) sessions now report to Moonlet. Sessions already open start reporting after a restart.\(nextStep)")
         } else {
             show("Couldn't connect \(name)", result.output)
         }

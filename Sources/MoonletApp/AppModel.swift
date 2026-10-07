@@ -166,8 +166,8 @@ final class AppModel {
             apply(engine.resolve(agentID: id, now: now))
             companion.resolved(agentID: id)
         case .finished(_, let summary):
-            // A turn under a minute you could have watched. Codex reports a turn's start
-            // and end together, so near-zero durations mean "unknown", not "quick".
+            // A turn under a minute you could have watched. Codex's notify reports a turn's
+            // start and end together, so near-zero durations mean "unknown", not "quick".
             let quick = turnStarted[agent.id].map { (1..<60).contains(now.timeIntervalSince($0)) } ?? false
             // The plain check is instant, so the pointer turns amber right away for a question.
             if SummaryWriter.fallback(for: summary ?? "").kind == .question { pendingQuestions.insert(agent.id) }

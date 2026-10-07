@@ -59,41 +59,9 @@ public enum ClaudeCodeInstaller {
             hooks = members
         }
 
-        let ours = Ownership(command: hookCommand(moonletPath: moonletPath), moonletPath: moonletPath)
-        let wanted = action == .install ? events : []
-        var changedEvents: [(event: String, change: String)] = []
-        var updatedHooks: [OrderedJSON.Member] = []
-
-        for member in hooks {
-            guard case .array(let groups) = member.value else {
-                if wanted.contains(member.key) {
-                    throw InstallError("hooks.\(member.key) in settings.json isn't an array, so Moonlet left it alone.")
-                }
-                updatedHooks.append(member)
-                continue
-            }
-            let event = member.key
-            let newGroups = reconcile(groups, event: event, wanted: wanted.contains(event), ours: ours)
-            if newGroups != groups {
-                let hadOurs = groups.contains { !ours.entries(in: $0).isEmpty }
-                let verb = !hadOurs ? "Add" : wanted.contains(event) ? "Update" : "Remove"
-                changedEvents.append((event, "\(verb) the \(event) hook"))
-                if newGroups.isEmpty {
-                    continue  // Moonlet emptied this event; drop it.
-                }
-            }
-            updatedHooks.append(OrderedJSON.Member(event, .array(newGroups)))
-        }
-        for event in wanted where !hooks.contains(where: { $0.key == event }) {
-            updatedHooks.append(OrderedJSON.Member(event, .array([group(for: event, command: ours.command)])))
-            changedEvents.append((event, "Add the \(event) hook"))
-        }
-
-        guard !changedEvents.isEmpty else { return .unchanged(settingsText) }
-        let rank = { (event: String) in allEvents.firstIndex(of: event) ?? allEvents.count }
-        let changes = changedEvents.enumerated()
-            .sorted { (rank($0.element.event), $0.offset) < (rank($1.element.event), $1.offset) }
-            .map(\.element.change)
+        let (updatedHooks, changes) = try table(moonletPath: moonletPath)
+            .update(hooks, wanted: action == .install ? events : [])
+        guard !changes.isEmpty else { return .unchanged(settingsText) }
         switch (hooksIndex, updatedHooks.isEmpty) {
         case (let index?, true):
             root.remove(at: index)
@@ -128,16 +96,7 @@ public enum ClaudeCodeInstaller {
     /// The hook command Moonlet installed for each event, keyed by event name.
     public static func installedHooks(settingsText: String) throws -> [String: String] {
         guard case .object(let hooks)? = try settingsMembers(settingsText)["hooks"] else { return [:] }
-        var installed: [String: String] = [:]
-        for member in hooks {
-            guard case .array(let groups) = member.value else { continue }
-            for group in groups {
-                if case .string(let command)? = Ownership.anyMoonlet.entries(in: group).first?["command"] {
-                    installed[member.key] = installed[member.key] ?? command
-                }
-            }
-        }
-        return installed
+        return HookTable.installed(in: hooks, ownership: .anyMoonlet(subcommand))
     }
 
     // MARK: Internals
@@ -156,34 +115,15 @@ public enum ClaudeCodeInstaller {
         return members
     }
 
-    /// One event's hook groups with Moonlet's entry in place (or gone). Moonlet keeps its
-    /// first group of its own, rewritten if it differs; its entries anywhere else are
-    /// removed, along with groups that end up empty.
-    private static func reconcile(_ groups: [OrderedJSON], event: String, wanted: Bool, ours: Ownership) -> [OrderedJSON] {
-        var result: [OrderedJSON] = []
-        var kept = false
-        for group in groups {
-            let ourEntries = ours.entries(in: group)
-            guard !ourEntries.isEmpty, case .object(var members) = group, case .array(let entries)? = members["hooks"]
-            else {
-                result.append(group)
-                continue
-            }
-            if wanted, !kept, ourEntries.count == entries.count {
-                kept = true
-                result.append(self.group(for: event, command: ours.command))
-                continue
-            }
-            let remaining = entries.filter { !ours.owns($0) }
-            if !remaining.isEmpty, let index = members.lastIndex(where: { $0.key == "hooks" }) {
-                members[index].value = .array(remaining)
-                result.append(.object(members))
-            }
-        }
-        if wanted, !kept {
-            result.append(group(for: event, command: ours.command))
-        }
-        return result
+    /// The words after the executable in Moonlet's hook command.
+    private static let subcommand = "hook claude-code"
+
+    private static func table(moonletPath: String) -> HookTable {
+        let command = hookCommand(moonletPath: moonletPath)
+        return HookTable(
+            ownership: HookOwnership(command: command, moonletPath: moonletPath, subcommand: subcommand),
+            events: allEvents, fileName: "settings.json"
+        ) { group(for: $0, command: command) }
     }
 
     /// Moonlet's hook group for an event.
@@ -199,30 +139,6 @@ public enum ClaudeCodeInstaller {
         ])
         members.append(OrderedJSON.Member("hooks", .array([entry])))
         return .object(members)
-    }
-
-    /// Tells Moonlet's hook entries apart from everyone else's.
-    private struct Ownership {
-        /// The command Moonlet installs; empty when only recognizing.
-        let command: String
-        let moonletPath: String
-
-        /// Recognizes any Moonlet hook, wherever the executable lives.
-        static let anyMoonlet = Ownership(command: "", moonletPath: "moonlet")
-
-        /// An entry is Moonlet's when it runs exactly `command`, or runs `hook claude-code`
-        /// through `moonletPath` or anything named like moonlet.
-        func owns(_ entry: OrderedJSON) -> Bool {
-            guard case .string(let entryCommand)? = entry["command"] else { return false }
-            return (!command.isEmpty && entryCommand == command)
-                || entryCommand.contains("hook claude-code")
-                && (entryCommand.contains(moonletPath) || entryCommand.contains("moonlet"))
-        }
-
-        func entries(in group: OrderedJSON) -> [OrderedJSON] {
-            guard case .array(let entries)? = group["hooks"] else { return [] }
-            return entries.filter(owns)
-        }
     }
 
     /// `[2, 1, 290]` from `"2.1.290 (Claude Code)"`.

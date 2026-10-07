@@ -1,0 +1,15 @@
+{
+  "session_id": "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+  "turn_id": "7",
+  "transcript_path": "/Users/example/.codex/sessions/2026/10/01/rollout-2026-10-01T09-30-00-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl",
+  "cwd": "/Users/example/code/payments",
+  "hook_event_name": "PostToolUse",
+  "model": "gpt-5-codex",
+  "permission_mode": "default",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "git push -u origin retries"
+  },
+  "tool_response": "Chunk ID: 9a8b7c\nWall time: 1.2034 seconds\nProcess exited with code 0\nOriginal token count: 18\nOutput:\nbranch 'retries' set up to track 'origin/retries'.\n",
+  "tool_use_id": "call_7f8a9b"
+}

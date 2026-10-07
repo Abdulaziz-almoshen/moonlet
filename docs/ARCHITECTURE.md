@@ -3,10 +3,10 @@
 Moonlet is one Swift package with five libraries, one command-line tool, and one app.
 
 ```
-            ┌──────────────── producers ────────────────┐
-            │ Claude Code hooks   Codex notify   scripts │
-            └───────┬───────────────┬──────────────┬─────┘
-                    ▼               ▼              ▼
+            ┌───────────────── producers ─────────────────┐
+            │ Claude Code hooks  Codex hooks/notify  scripts │
+            └───────┬────────────────┬─────────────────┬────┘
+                    ▼                ▼                 ▼
               moonlet hook claude-code │ hook codex │ emit        (Sources/moonlet)
                     │  MoonletAdapters: payload → MoonletEvent
                     ▼
@@ -31,8 +31,8 @@ Moonlet is one Swift package with five libraries, one command-line tool, and one
 | --- | --- | --- |
 | `MoonletCore` | Wire protocol (`MoonletEvent`, `Envelope`), `Agent`, and `AgentStore`, which turns events into agents and signals | Foundation |
 | `MoonletIPC` | Unix-socket server and client, the spool, and paths | Core |
-| `MoonletAdapters` | Claude Code hook payloads and Codex notify payloads to events | Core |
-| `MoonletSetup` | Installers for Claude Code and Codex that preserve key order and comments | Core |
+| `MoonletAdapters` | Claude Code and Codex hook payloads, and Codex notify payloads, to events; the ledger that keeps Codex turns from being reported twice | Core |
+| `MoonletSetup` | Installers for Claude Code (`settings.json`) and Codex (`hooks.json`, or `notify` in `config.toml`) that preserve key order and comments | Core |
 | `MoonletBrain` | Attention rules, presence policy, gestures, pointer policy, the companion's mood reading, question and stuck detection, learning, summary parsing | Foundation, CoreGraphics |
 | `moonlet` | The command: hooks, `emit`, `status`, `summon`, `demo`, `install`, `doctor` | All libraries except Brain |
 | `MoonletApp` | The menu bar app: sensing, pointer skin, the companion (art, behaviors, director), cards, summon view, local model client | Core, IPC, Brain |
@@ -70,7 +70,9 @@ Either way the reason appears in the menu and in `~/Library/Logs/Moonlet/app.log
 
 ## Hooks
 
-`moonlet hook claude-code` reads the hook payload from standard input, writes nothing to standard output, and always exits 0. Claude Code therefore treats it as a pure observer: it can't block a tool, change a permission decision, or add context. Each hook has a 5-second timeout in the settings file, and a typical run takes well under that, since the command only parses JSON and writes one line to a socket.
+`moonlet hook claude-code` and `moonlet hook codex` read the hook payload from standard input, write nothing to standard output, and always exit 0. Claude Code and Codex therefore treat them as pure observers: they can't block a tool, change a permission decision, or add context. Each hook has a 5-second timeout in the agent's config, and a typical run takes well under that, since the command only parses JSON and writes one line to a socket.
+
+`moonlet hook codex` with arguments is Codex's older `notify` program instead. Codex runs it after the `Stop` hooks of the same turn, so the `Stop` hook writes the finished turn to `CodexHookLedger` (`codex-hooks/` in the support directory), and the notify call skips a turn that's already there. Sessions whose hooks don't run keep reporting through notify.
 
 ## Testing
 

@@ -1,0 +1,13 @@
+{
+  "session_id": "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b",
+  "turn_id": "7",
+  "transcript_path": "/Users/example/.codex/sessions/2026/10/01/rollout-2026-10-01T09-30-00-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl",
+  "cwd": "/Users/example/code/payments",
+  "hook_event_name": "PermissionRequest",
+  "model": "gpt-5-codex",
+  "permission_mode": "default",
+  "tool_name": "apply_patch",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Update File: Sources/Payments/PaymentClient.swift\n@@\n-    let retries = 0\n+    let retries = 3\n*** Add File: Sources/Payments/Backoff.swift\n+struct Backoff {}\n*** End Patch\n"
+  }
+}

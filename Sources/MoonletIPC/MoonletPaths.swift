@@ -55,6 +55,11 @@ public struct MoonletPaths: Sendable, Equatable {
         supportDirectory.appending(path: "spool.jsonl", directoryHint: .notDirectory)
     }
 
+    /// Which Codex sessions report through hooks, so their notify calls aren't counted twice.
+    public var codexHooksDirectory: URL {
+        supportDirectory.appending(path: "codex-hooks", directoryHint: .isDirectory)
+    }
+
     /// Creates the support directory if needed and restricts it to the current user.
     public func createSupportDirectory() throws {
         let manager = FileManager.default

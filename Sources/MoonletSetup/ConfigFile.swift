@@ -19,8 +19,21 @@ enum ConfigFile {
         guard plan.hasChanges, !dryRun else {
             return InstallResult(plan: plan, wroteFile: false, backupURL: nil)
         }
-        let backupURL = try replace(url, with: plan.newText, now: now)
+        let backupURL = try plan.removesFile ? remove(url, now: now) : replace(url, with: plan.newText, now: now)
         return InstallResult(plan: plan, wroteFile: true, backupURL: backupURL)
+    }
+
+    /// Deletes the file after copying it to a timestamped backup beside it. A symlink is
+    /// removed itself, leaving the file it points to alone. Returns the backup's location,
+    /// or `nil` if there was no file.
+    static func remove(_ url: URL, now: Date) throws -> URL? {
+        let manager = FileManager.default
+        let target = url.resolvingSymlinksInPath()
+        guard manager.fileExists(atPath: target.path) else { return nil }
+        let backup = availableBackupURL(for: target, now: now)
+        try manager.copyItem(at: target, to: backup)
+        try manager.removeItem(at: url)
+        return backup
     }
 
     /// Atomically replaces the file's contents, after copying the current version to a

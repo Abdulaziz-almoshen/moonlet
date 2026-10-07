@@ -14,6 +14,11 @@ enum Locations {
             .appending(path: "config.toml", directoryHint: .notDirectory)
     }
 
+    /// `hooks.json` beside a Codex `config.toml`: the same configuration layer.
+    static func codexHooks(besideConfig config: URL) -> URL {
+        config.deletingLastPathComponent().appending(path: "hooks.json", directoryHint: .notDirectory)
+    }
+
     /// A path from the command line, with `~` expanded and made absolute.
     static func url(forUserPath path: String) -> URL {
         URL(filePath: (path as NSString).expandingTildeInPath, directoryHint: .notDirectory).standardizedFileURL
@@ -37,6 +42,20 @@ enum Locations {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return ["\(home)/.local/bin/claude", "\(home)/.claude/local/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
             .first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// The `codex` executable on `PATH` or in its usual install locations. The app runs
+    /// `moonlet` with a minimal `PATH`, so the usual places matter.
+    static func codexExecutable(environment: [String: String]) -> String? {
+        if let found = executable(named: "codex", environment: environment) {
+            return found
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return [
+            "/opt/homebrew/bin/codex", "/usr/local/bin/codex", "\(home)/.local/bin/codex", "\(home)/.npm-global/bin/codex",
+            "\(home)/.bun/bin/codex", "\(home)/.volta/bin/codex", "\(home)/.cargo/bin/codex",
+        ]
+        .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     private static func executable(named name: String, environment: [String: String]) -> String? {

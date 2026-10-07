@@ -19,6 +19,7 @@ All notable changes to Moonlet are listed here. The format follows [Keep a Chang
 - The companion: a tiny moon that pops out of the pointer with each card, makes a face that fits what the agent said (celebrating a deploy, cheeky about a typo, nervous about `rm -rf`, teary about a failure), and fades once the talk is over. Every appearance varies, with an occasional surprise. Turn it off in Settings.
 - Request cards park in place and take a click, which opens the agent's tab, so you never chase them; they catch up if you move far away.
 - The summon view shows every agent as a little companion: agents that need you sit closest to the middle, each lit like a moon by its progress, with a Next up card, finish estimates, a one-hour timeline, and keys 1–9, Return, and Esc.
+- Codex reports through hooks, the way Claude Code does. With Codex 0.153 or later, `moonlet install codex` adds Moonlet's hooks to `~/.codex/hooks.json`, so a Codex agent shows what it's doing, its plan's progress, and every permission request (`Wants to run npm install`), not just finished turns. Codex asks you once to trust the hooks. Older versions keep the `notify` chain, and an existing notify setting stays as a fallback without reporting a turn twice.
 
 ### Fixed
 
@@ -26,3 +27,4 @@ All notable changes to Moonlet are listed here. The format follows [Keep a Chang
 - The pointer's hotspot now sits at the arrow's visible tip.
 - The drawn pointer and cards could freeze on screen after the display slept. They now follow mouse events and a timer instead of the display's refresh, hide while the screen sleeps or is locked, and restart on wake.
 - An unanswered question no longer keeps the pointer yellow indefinitely; after 10 minutes only its reminders color it.
+- `moonlet doctor` said Moonlet was missing from Codex's `notify` when another app's notifier ran it, for example through `--previous-notify`. It now finds Moonlet there too.

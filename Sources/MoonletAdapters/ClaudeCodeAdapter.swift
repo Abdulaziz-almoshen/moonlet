@@ -219,7 +219,7 @@ public enum ClaudeCodeAdapter {
         return TextTools.oneLine(text, max: 60)
     }
 
-    private static func fileName(_ path: String?) -> String {
+    static func fileName(_ path: String?) -> String {
         guard let path, let name = path.split(separator: "/").last else { return "a file" }
         return String(name)
     }
