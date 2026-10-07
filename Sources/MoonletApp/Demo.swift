@@ -1,9 +1,11 @@
 import Foundation
 import MoonletCore
 
-/// A one-minute scripted scenario with three agents, played through the real
-/// pipeline so anyone can see Moonlet work before connecting an agent: a
-/// permission request and a question (yellow), news (blue), and a failure (red).
+/// A one-minute scripted scenario with six agents, played through the real
+/// pipeline so anyone can see Moonlet work before connecting an agent. Each
+/// moment brings out the companion in a different mood: asking for a
+/// permission, celebrating a deploy, curious about a question, cheeky about a
+/// typo, teary about a failure, nervous about `rm -rf`, and proud of green tests.
 @MainActor
 final class Demo {
     private let send: (MoonletEvent) -> Void
@@ -35,20 +37,28 @@ final class Demo {
                          progress: done.map { AgentProgress(done: $0, total: total) }, cwd: "/tmp/\(session)")
         }
         return [
-            (0.0, event("landing-page", .working, title: "Build the landing page", activity: "Building the pricing grid")),
+            (0.0, event("landing-page", .working, title: "Build the landing page", activity: "Building the pricing grid", done: 2, of: 6)),
             (0.2, event("api-refactor", .working, title: "Paginate the orders API", activity: "Editing Orders.swift", done: 3)),
             (0.4, event("db-migration", .working, title: "Move orders to the v2 schema", activity: "Applying migration 3", done: 2, of: 4)),
-            // Working agents stay silent; the pointer is the normal arrow.
+            (0.6, event("web-app", .working, title: "Ship the checkout fix", activity: "Running the deploy", done: 4)),
+            (0.8, event("docs-site", .working, title: "Tidy the README", activity: "Reading README.md", done: 0, of: 1)),
+            // Working agents stay silent: no companion, the normal arrow.
             (4.0, event("landing-page", .waiting, message: "Wants to run npm install")),
-            (14.0, event("landing-page", .working, activity: "Installing packages")),
-            (16.0, event("api-refactor", .waiting, message: "Which database should the tests use? SQLite · Postgres")),
-            (26.0, event("api-refactor", .working, activity: "Running tests", done: 4)),
-            (28.0, event("landing-page", .done, summary: "The landing page is live on the preview URL and Lighthouse scores 98.")),
-            (36.0, event("db-migration", .failed, message: "Staging database refused the connection (ECONNREFUSED)")),
-            (46.0, event("api-refactor", .done, summary: "Cursor pagination shipped on /orders and all 14 tests pass.", done: 5)),
-            (60.0, event("landing-page", end: true)),
-            (60.0, event("db-migration", end: true)),
-            (60.0, event("api-refactor", end: true)),
+            (12.0, event("landing-page", .working, activity: "Installing packages", done: 3, of: 6)),
+            (15.0, event("web-app", .done, summary: "Deployed to production. The checkout fix is live.", done: 5)),
+            (22.0, event("api-refactor", .waiting, message: "Which database should the tests use? SQLite · Postgres")),
+            (31.0, event("api-refactor", .working, activity: "Running tests", done: 4)),
+            (33.0, event("docs-site", .done, summary: "Fixed a typo in the README.", done: 1, of: 1)),
+            (39.0, event("db-migration", .failed, message: "Staging database refused the connection (ECONNREFUSED)")),
+            (46.0, event("infra", .waiting, title: "Clean the build cache", message: "Wants to run rm -rf build/")),
+            (53.0, event("infra", .working, activity: "Cleaning the build cache")),
+            (55.0, event("api-refactor", .done, summary: "All 14 tests pass.", done: 5)),
+            (66.0, event("landing-page", end: true)),
+            (66.0, event("db-migration", end: true)),
+            (66.0, event("api-refactor", end: true)),
+            (66.0, event("web-app", end: true)),
+            (66.0, event("docs-site", end: true)),
+            (66.0, event("infra", end: true)),
         ]
     }
 }

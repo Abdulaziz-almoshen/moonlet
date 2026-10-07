@@ -53,6 +53,7 @@ extension AppModel {
     private func settingsMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(toggle("Moonlet pointer while agents work", \.pointerSkin))
+        menu.addItem(toggle("Companion brings the cards", \.companion))
         if let reason = skin.suspendedReason {
             menu.addItem(.header("Pointer paused: \(reason)"))
             menu.addItem(MenuItem("Turn the pointer back on") { [weak self] in self?.skin.resume() })

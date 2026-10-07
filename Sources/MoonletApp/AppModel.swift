@@ -26,6 +26,7 @@ final class AppModel {
     private let input = InputMonitor()
     let skin = PointerSkin()
     private let cards = CardPanel()
+    private lazy var companion = CompanionDirector(cards: cards)
     private let summon = SummonPanel()
     private let moon = StatusMoon()
     private let model: LocalModel
@@ -38,6 +39,10 @@ final class AppModel {
     private var cardShownAt: [UUID: Date] = [:]
     private var lastStuckCheck = Date.distantPast
     private var lastSummonContent: SummonContent?
+    /// When the user last opened the summon view, and the time before that,
+    /// which decides what counts as new.
+    private var lastLookedAt = Date.distantPast
+    private var lookedSince = Date.distantPast
     /// Agents whose final message looks like a question, while the model writes the summary.
     private var pendingQuestions: Set<String> = []
     private var lastWarmUp = Date.distantPast
@@ -75,6 +80,9 @@ final class AppModel {
         replaySpool()
 
         cards.homeLocation = { [weak self] in self?.moon.screenLocation }
+        companion.isEnabled = settings.companion
+        companion.onOpen = { [weak self] id in self?.openAgent(id) }
+        companion.placeName = { [weak self] id in self?.store.agent(id: id).map { Jump.placeName(for: $0) } }
         summon.onOpen = { [weak self] id in self?.openAgent(id) }
         summon.onBatch = { [weak self] project, accept in self?.answerBatchSuggestion(project, accept: accept) }
         moon.buildMenu = { [weak self] menu in self?.buildMenu(menu) }
@@ -129,7 +137,10 @@ final class AppModel {
                 warmUpModelIfNeeded()
             }
             // An agent that works again isn't blocked on the user, even after a question.
-            if agent.state == .working || agent.state == .idle { apply(engine.resolve(agentID: id, now: time)) }
+            if agent.state == .working || agent.state == .idle {
+                apply(engine.resolve(agentID: id, now: time))
+                companion.resolved(agentID: id)
+            }
         }
         let fresh = Date().timeIntervalSince(time) < 600
         for signal in signals where fresh {
@@ -143,6 +154,7 @@ final class AppModel {
         let now = Date()
         guard let agent = store.agent(id: signal.agentID) else {
             apply(engine.resolve(agentID: signal.agentID, now: now))
+            companion.resolved(agentID: signal.agentID)
             return
         }
         switch signal {
@@ -152,6 +164,7 @@ final class AppModel {
             deliver(moment(agent, .needsYou, detail ?? "Waiting for you"))
         case .resolved(let id), .ended(let id):
             apply(engine.resolve(agentID: id, now: now))
+            companion.resolved(agentID: id)
         case .finished(_, let summary):
             // A turn under a minute you could have watched. Codex reports a turn's start
             // and end together, so near-zero durations mean "unknown", not "quick".
@@ -221,9 +234,9 @@ final class AppModel {
             switch effect {
             case .show(let card):
                 cardShownAt[card.id] = now
-                cards.show(card)
+                companion.show(card)
             case .hide(let card, let reason):
-                cards.hide(flyHome: reason == .seen)
+                companion.hide(card, reason: reason)
                 if reason == .clicked, card.tone == .finished, let shown = cardShownAt[card.id],
                    now.timeIntervalSince(shown) < 1.5 {
                     for moment in card.moments { engagement.record(.dismissedQuickly, project: moment.project, now: now) }
@@ -231,6 +244,7 @@ final class AppModel {
                 cardShownAt[card.id] = nil
             case .flash(let kind):
                 pointer.flash(PointerTint(kind), now: now)
+                companion.peek(kind)
             }
         }
     }
@@ -300,7 +314,9 @@ final class AppModel {
     /// Moonlet's click-through windows must never receive input. If one does, the
     /// drawn pointer is in the way, so it turns itself off immediately.
     private func guardAgainstCapturedInput(_ event: NSEvent) {
-        guard skin.owns(event.window) || cards.owns(event.window) else { return }
+        // A parked request card takes clicks on purpose; everything else must not.
+        let clickedParkedCard = cards.owns(event.window) && cards.isClickable
+        guard skin.owns(event.window) || companion.owns(event.window) || (cards.owns(event.window) && !clickedParkedCard) else { return }
         suspendSkin("A click or scroll landed on Moonlet's pointer instead of your app")
     }
 
@@ -361,7 +377,7 @@ final class AppModel {
 
     private func pointerMoved(_ point: CGPoint, time: TimeInterval, buttonsDown: Bool) {
         skin.pointerMoved()
-        cards.pointerMoved()
+        companion.pointerMoved()
         if summon.isOpen {
             summon.pointerMoved(to: point)
             return
@@ -380,6 +396,9 @@ final class AppModel {
     func openSummon(at point: CGPoint?, by trigger: String = "the shortcut or menu") {
         AppLog.write(paths: paths, "Summon view opened by \(trigger)")
         apply(engine.summoned(now: Date()))
+        companion.summonOpened()
+        lookedSince = lastLookedAt
+        lastLookedAt = Date()
         let content = summonContent()
         lastSummonContent = content
         summon.open(at: point ?? NSEvent.mouseLocation, content: content)
@@ -391,19 +410,66 @@ final class AppModel {
     }
 
     private func summonContent() -> SummonContent {
+        let now = Date()
         let blocked = Set(engine.blockedAgents.map(\.agentID))
         let rank: [AgentActivity: Int] = [.waiting: 0, .failed: 1, .working: 2, .done: 3, .idle: 4]
         let rows = store.agents
             .filter { !$0.ended || $0.state.isFinished }
             .map { agent in
-                AgentRow(id: agent.id, label: agent.label, place: Jump.placeName(for: agent),
-                         activity: activity(of: agent, blocked: blocked), progress: agent.progress?.fraction,
-                         status: status(of: agent), since: agent.stateChangedAt)
+                let activity = activity(of: agent, blocked: blocked)
+                let status = status(of: agent)
+                return AgentRow(id: agent.id, label: agent.label, place: Jump.placeName(for: agent),
+                                activity: activity, progress: agent.progress?.fraction, status: status,
+                                since: agent.stateChangedAt, mood: mood(of: agent, activity: activity),
+                                options: activity == .waiting ? Self.options(in: agent.message ?? "") : [],
+                                etaMinutes: activity == .working ? eta(of: agent, now: now) : nil,
+                                isNew: activity != .working && activity != .idle && agent.stateChangedAt > lookedSince)
             }
             .sorted { (rank[$0.activity] ?? 9, -$0.since.timeIntervalSince1970) < (rank[$1.activity] ?? 9, -$1.since.timeIntervalSince1970) }
         let suggestion = settings.learns
-            ? engagement.suggestions(excluding: settings.batchedProjects, now: Date()).first : nil
-        return SummonContent(agents: rows, earlier: Array(engine.history.prefix(3)), suggestion: suggestion)
+            ? engagement.suggestions(excluding: settings.batchedProjects, now: now).first : nil
+        return SummonContent(agents: rows, events: timeline(now: now), earlier: Array(engine.history.prefix(3)), suggestion: suggestion)
+    }
+
+    /// How an agent's latest words felt, for its face in the summon view.
+    private func mood(of agent: Agent, activity: AgentActivity) -> CompanionMood? {
+        switch activity {
+        case .waiting: CompanionMood.read(kind: .needsYou, detail: agent.message ?? "")
+        case .failed: CompanionMood.read(kind: .failed, detail: agent.message ?? "")
+        case .done: CompanionMood.read(kind: .finished, detail: outcomes[agent.id] ?? agent.summary ?? "")
+        case .working, .idle: nil
+        }
+    }
+
+    /// The choices in a question card's text, such as `Which database? SQLite · Postgres`.
+    static func options(in message: String) -> [String] {
+        guard let mark = message.firstIndex(of: "?") else { return [] }
+        return message[message.index(after: mark)...]
+            .split(separator: "·")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Minutes until a working agent is likely done, from how fast it has been
+    /// checking off its own task list this turn.
+    private func eta(of agent: Agent, now: Date) -> Int? {
+        guard let fraction = agent.progress?.fraction, fraction > 0, fraction < 1,
+              let started = turnStarted[agent.id] else { return nil }
+        let elapsed = now.timeIntervalSince(started)
+        guard elapsed > 30 else { return nil }
+        return max(1, Int((elapsed * (1 - fraction) / fraction / 60).rounded()))
+    }
+
+    /// The last hour of moments, oldest first.
+    private func timeline(now: Date) -> [TimelineEvent] {
+        var seen = Set<UUID>()
+        let moments = (engine.history + engine.queue.map(\.moment) + engine.inbox)
+            .filter { now.timeIntervalSince($0.createdAt) < 3600 && seen.insert($0.id).inserted }
+        return moments
+            .sorted { $0.createdAt < $1.createdAt }
+            .map { TimelineEvent(id: $0.id, at: $0.createdAt, kind: $0.kind,
+                                 mood: CompanionMood.read(kind: $0.kind, detail: $0.detail),
+                                 label: "\($0.agentLabel) · \($0.detail)") }
     }
 
     private func status(of agent: Agent) -> String {
@@ -445,6 +511,7 @@ final class AppModel {
 
     func applySettings() {
         engine.config = settings.attentionConfig
+        companion.isEnabled = settings.companion
         gestures.config = settings.gestureConfig
         presence.detectsCalls = settings.holdDuringCalls
         Task { await model.setModel(settings.summaryModel) }

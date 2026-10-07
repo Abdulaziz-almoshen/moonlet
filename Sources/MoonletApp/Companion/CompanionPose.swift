@@ -1,6 +1,9 @@
 import CoreGraphics
 import MoonletBrain
 
+/// The companion's face. Named here so it wins over Foundation's `Expression`.
+typealias Expression = MoonletBrain.Expression
+
 /// Something the companion holds, wears, or gives off, with how far along its
 /// little animation is (`progress`, 0...1; looping props wrap around).
 struct CompanionProp: Equatable {

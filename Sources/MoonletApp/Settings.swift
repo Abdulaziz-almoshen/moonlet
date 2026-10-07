@@ -17,6 +17,12 @@ final class Settings {
         set { defaults.set(newValue, forKey: "pointerSkin") }
     }
 
+    /// Show the companion, a tiny moon that brings each card and reacts to what it says.
+    var companion: Bool {
+        get { bool("companion", default: true) }
+        set { defaults.set(newValue, forKey: "companion") }
+    }
+
     /// Seconds a card stays while the user is active.
     var holdSeconds: Double {
         get { defaults.object(forKey: "holdSeconds") as? Double ?? 4 }
