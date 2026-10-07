@@ -7,8 +7,9 @@ import Carbon.HIToolbox
 final class InputMonitor {
     /// Pointer position in screen points, event time, and whether a button is held.
     var onMove: ((CGPoint, TimeInterval, Bool) -> Void)?
-    /// A mouse button went down anywhere.
-    var onClick: (() -> Void)?
+    /// A mouse button went down anywhere, with the Moonlet window it landed on,
+    /// or `nil` for a click in another app.
+    var onClick: ((NSWindow?) -> Void)?
     /// A click or scroll was delivered to one of Moonlet's own windows.
     var onLocalPress: ((NSEvent) -> Void)?
     /// A click or scroll reached any app, Moonlet included.
@@ -33,7 +34,7 @@ final class InputMonitor {
                 self.lastDeliveredPress = max(self.lastDeliveredPress, event.timestamp)
                 self.onPress?()
                 if local { self.onLocalPress?(event) }
-                if event.type != .scrollWheel { self.onClick?() }
+                if event.type != .scrollWheel { self.onClick?(local ? event.window : nil) }
             }
         }
         if let monitor = NSEvent.addGlobalMonitorForEvents(matching: moves, handler: move) { monitors.append(monitor) }

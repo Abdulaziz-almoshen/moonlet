@@ -5,7 +5,8 @@ import SwiftUI
 
 /// The card at the user's pointer. It never takes focus. The companion's
 /// director places it: beside the companion while it rides with the pointer,
-/// or parked in place for a request, when it also becomes clickable.
+/// or parked in place for a request. A parked card takes clicks only while the
+/// pointer rests on it; otherwise its window is click-through.
 @MainActor
 final class CardPanel {
     /// Where cards go when they leave on their own; the menu bar moon.
@@ -16,8 +17,14 @@ final class CardPanel {
 
     /// Called when the user clicks a parked card.
     var onClick: (() -> Void)?
-    /// Whether the card takes clicks: only while it's parked for a request.
-    private(set) var isClickable = false
+    /// Whether the card is parked for a request: it says what a click does, and
+    /// takes clicks while the pointer rests on it.
+    private(set) var isParked = false
+    /// Whether the card's window takes mouse events right now.
+    private(set) var takesInput = false
+    /// When the card last went click-through, in seconds since startup, the
+    /// clock of `NSEvent.timestamp`.
+    private(set) var clickThroughSince: TimeInterval = 0
 
     private let panel: NSPanel
     private let host: FirstClickHostingView<CardView>
@@ -39,19 +46,24 @@ final class CardPanel {
         panel.contentView = host
     }
 
-    /// Whether `window` is the card's own click-through window.
+    /// Whether `window` is the card's own window.
     func owns(_ window: NSWindow?) -> Bool { window === panel }
 
+    /// The card's window frame in screen coordinates, including its transparent margin.
+    var frame: CGRect { panel.frame }
     /// The card's window size, including its transparent margin.
     var size: CGSize { panel.frame.size }
 
-    /// Shows `card` with its window at `origin`, in screen coordinates.
-    func show(_ card: Card, at origin: CGPoint) {
+    /// Shows `card`, click-through, with its window at the origin `place` gives
+    /// for the card's size, in screen coordinates.
+    func show(_ card: Card, placedBy place: (CGSize) -> CGPoint) {
         self.card = card
         leaving = false
+        isParked = false
         hint = nil
+        setTakesInput(false)
         render()
-        panel.setFrameOrigin(origin)
+        panel.setFrameOrigin(clamped(place(panel.frame.size), size: panel.frame.size))
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
@@ -60,23 +72,41 @@ final class CardPanel {
         }
     }
 
-    /// Moves the card's window to `origin` while it shows.
+    /// Moves the card's window to `origin` while it shows, kept inside the
+    /// visible frame of its screen.
     func move(to origin: CGPoint) {
         guard card != nil, !leaving else { return }
+        let origin = clamped(origin, size: panel.frame.size)
         if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
     }
 
-    /// Lets the card take clicks, with a line saying what a click does, or makes it click-through again.
-    func setClickable(_ clickable: Bool, hint: String? = nil) {
-        guard clickable != isClickable || hint != self.hint else { return }
-        isClickable = clickable
-        self.hint = clickable ? hint : nil
-        panel.ignoresMouseEvents = !clickable
+    /// Parks the card with a line saying what a click does, or lets it ride
+    /// again, click-through. Parking alone doesn't take clicks; `setTakesInput` does.
+    func setParked(_ parked: Bool, hint: String? = nil) {
+        let hint = parked ? hint : nil
+        guard parked != isParked || hint != self.hint else { return }
+        isParked = parked
+        self.hint = hint
+        if !parked { setTakesInput(false) }
         if card != nil, !leaving { render() }
     }
 
+    /// Lets a parked card's window take clicks, or makes it click-through.
+    func setTakesInput(_ takes: Bool) {
+        let takes = takes && isParked && card != nil && !leaving
+        guard takes != takesInput else { return }
+        takesInput = takes
+        panel.ignoresMouseEvents = !takes
+        if !takes { clickThroughSince = ProcessInfo.processInfo.systemUptime }
+    }
+
+    /// Whether an event that landed on the card at `timestamp` was made while it took input.
+    func tookInput(at timestamp: TimeInterval) -> Bool {
+        CompanionStage.cardTookEvent(at: timestamp, takesInputNow: takesInput, clickThroughSince: clickThroughSince)
+    }
+
     private func render() {
-        let action: (() -> Void)? = isClickable ? { [weak self] in self?.onClick?() } : nil
+        let action: (() -> Void)? = isParked ? { [weak self] in self?.onClick?() } : nil
         host.rootView = CardView(card: card, hint: hint, action: action)
         let size = host.fittingSize
         let top = panel.frame.maxY
@@ -84,12 +114,23 @@ final class CardPanel {
         if card != nil { panel.setFrameOrigin(CGPoint(x: panel.frame.minX, y: top - size.height)) }
     }
 
+    /// `origin` kept inside the visible frame of the screen the card is on, so
+    /// it never covers the menu bar or crosses onto another display.
+    private func clamped(_ origin: CGPoint, size: CGSize) -> CGPoint {
+        let center = CGPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+        let mouse = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) })
+            ?? NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) else { return origin }
+        return CompanionStage.clamp(origin, size: size, into: screen.visibleFrame)
+    }
+
     /// Hides the card; cards that leave on their own fly to the menu bar moon the first few times.
     func hide(flyHome: Bool) {
         guard card != nil, !leaving else { return }
+        setTakesInput(false)
         leaving = true
-        isClickable = false
-        panel.ignoresMouseEvents = true
+        isParked = false
+        hint = nil
         let start = panel.frame
         let target = flyHome && flightsLeft > 0 ? homeLocation?() : nil
         if target != nil { flightsLeft -= 1 }
@@ -148,9 +189,10 @@ struct CardView: View {
             .fixedSize(horizontal: false, vertical: true)
             .background(Backdrop().clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous)))
             .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(tint.opacity(0.6), lineWidth: 1))
-            .padding(10)
-            .contentShape(Rectangle())
+            // Only the visible card takes a click, never its transparent margin.
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
             .onTapGesture { action?() }
+            .padding(10)
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(action == nil ? [] : .isButton)
         }

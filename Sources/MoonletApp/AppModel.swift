@@ -57,6 +57,8 @@ final class AppModel {
     private var wasDrawing = false
     private var lastSkinReason: String?
     private var undeliveredPresses: [Date] = []
+    /// When a scroll last landed on the parked card, in seconds since startup.
+    private var lastScrollOnCard: TimeInterval = -1
 
     init() {
         let settings = Settings()
@@ -81,13 +83,13 @@ final class AppModel {
 
         cards.homeLocation = { [weak self] in self?.moon.screenLocation }
         companion.isEnabled = settings.companion
-        companion.onOpen = { [weak self] id in self?.openAgent(id) }
+        companion.onOpen = { [weak self] id, card in self?.openFromCard(id, card: card) }
         companion.placeName = { [weak self] id in self?.store.agent(id: id).map { Jump.placeName(for: $0) } }
         summon.onOpen = { [weak self] id in self?.openAgent(id) }
         summon.onBatch = { [weak self] project, accept in self?.answerBatchSuggestion(project, accept: accept) }
         moon.buildMenu = { [weak self] menu in self?.buildMenu(menu) }
         input.onMove = { [weak self] point, time, buttons in self?.pointerMoved(point, time: time, buttonsDown: buttons) }
-        input.onClick = { [weak self] in self?.clicked() }
+        input.onClick = { [weak self] window in self?.clicked(on: window) }
         input.onLocalPress = { [weak self] event in self?.guardAgainstCapturedInput(event) }
         input.onPress = { [weak self] in
             guard let self, self.skin.isDrawing else { return }
@@ -137,9 +139,10 @@ final class AppModel {
                 warmUpModelIfNeeded()
             }
             // An agent that works again isn't blocked on the user, even after a question.
+            // The companion hears first, so it knows to thank rather than just fade.
             if agent.state == .working || agent.state == .idle {
+                companion.resolved(agentID: id, ended: agent.ended)
                 apply(engine.resolve(agentID: id, now: time))
-                companion.resolved(agentID: id)
             }
         }
         let fresh = Date().timeIntervalSince(time) < 600
@@ -153,8 +156,8 @@ final class AppModel {
     private func handle(_ signal: Signal) {
         let now = Date()
         guard let agent = store.agent(id: signal.agentID) else {
+            companion.resolved(agentID: signal.agentID, ended: true)
             apply(engine.resolve(agentID: signal.agentID, now: now))
-            companion.resolved(agentID: signal.agentID)
             return
         }
         switch signal {
@@ -163,8 +166,9 @@ final class AppModel {
             let detail = message.flatMap { $0.isEmpty ? nil : TextTools.oneLine($0, max: 110) }
             deliver(moment(agent, .needsYou, detail ?? "Waiting for you"))
         case .resolved(let id), .ended(let id):
+            // A session that ended fades quietly; only an answer gets thanks.
+            companion.resolved(agentID: id, ended: agent.ended)
             apply(engine.resolve(agentID: id, now: now))
-            companion.resolved(agentID: id)
         case .finished(_, let summary):
             // A turn under a minute you could have watched. Codex reports a turn's start
             // and end together, so near-zero durations mean "unknown", not "quick".
@@ -244,7 +248,6 @@ final class AppModel {
                 cardShownAt[card.id] = nil
             case .flash(let kind):
                 pointer.flash(PointerTint(kind), now: now)
-                companion.peek(kind)
             }
         }
     }
@@ -314,9 +317,22 @@ final class AppModel {
     /// Moonlet's click-through windows must never receive input. If one does, the
     /// drawn pointer is in the way, so it turns itself off immediately.
     private func guardAgainstCapturedInput(_ event: NSEvent) {
-        // A parked request card takes clicks on purpose; everything else must not.
-        let clickedParkedCard = cards.owns(event.window) && cards.isClickable
-        guard skin.owns(event.window) || companion.owns(event.window) || (cards.owns(event.window) && !clickedParkedCard) else { return }
+        if cards.owns(event.window) {
+            // A parked card takes input on purpose while the pointer rests on it. That
+            // covers a click queued behind the first, made before the card went
+            // click-through, and the rest of a scroll gesture macOS keeps on the
+            // window where it began.
+            let restOfScroll = event.type == .scrollWheel && event.timestamp - lastScrollOnCard < 0.3
+            if cards.tookInput(at: event.timestamp) || restOfScroll {
+                // A scroll was meant for the app below: the card lets go at once.
+                if event.type == .scrollWheel {
+                    lastScrollOnCard = event.timestamp
+                    cards.setTakesInput(false)
+                }
+                return
+            }
+        }
+        guard skin.owns(event.window) || companion.owns(event.window) || cards.owns(event.window) else { return }
         suspendSkin("A click or scroll landed on Moonlet's pointer instead of your app")
     }
 
@@ -388,9 +404,20 @@ final class AppModel {
         }
     }
 
-    private func clicked() {
+    /// A mouse button went down; `window` is the Moonlet window it landed on, if any.
+    private func clicked(on window: NSWindow?) {
         if summon.isOpen, !summon.contains(NSEvent.mouseLocation) { summon.close() }
+        // A click on the parked card is the card's own: its tap opens the agent.
+        // Counting it as a click elsewhere would take the card away first.
+        if cards.owns(window) { return }
         apply(engine.click(now: Date()))
+    }
+
+    /// The user clicked a parked request card: the card counts as seen, and the
+    /// agent's tab comes forward.
+    private func openFromCard(_ id: String, card: Card) {
+        if engine.current?.id == card.id { apply(engine.click(now: Date())) }
+        openAgent(id)
     }
 
     func openSummon(at point: CGPoint?, by trigger: String = "the shortcut or menu") {
@@ -507,6 +534,9 @@ final class AppModel {
 
     func pause(for duration: TimeInterval?) {
         pausedUntil = duration.map { Date().addingTimeInterval($0) }
+        // A pause holds cards like a call: the card at the pointer goes now, not on the next tick.
+        apply(engine.tick(presence: currentPresence(), now: Date()))
+        refresh()
     }
 
     func applySettings() {

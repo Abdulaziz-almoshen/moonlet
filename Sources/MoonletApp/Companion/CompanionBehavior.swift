@@ -110,8 +110,8 @@ enum CompanionBehavior: CaseIterable {
     }
 }
 
-/// How each mood performs: an entrance (two variants, so it varies), what it
-/// keeps with it, and the moves it picks from while the card shows.
+/// How each mood performs: an entrance (the good-news moods have two, so they
+/// vary), what it keeps with it, and the moves it picks from while the card shows.
 struct MoodPerformance {
     struct Entrance {
         var duration: Double
