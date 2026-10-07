@@ -249,6 +249,29 @@ struct AttentionEngineTests {
         #expect(engine.queue.count == 1)
         #expect(engine.queue.first?.moment.kind == .failed)
     }
+
+    @Test("History keeps the whole last hour for the timeline, beyond its limit")
+    func historyKeepsTheHour() {
+        var config = AttentionConfig()
+        config.historyLimit = 3
+        var engine = AttentionEngine(config: config)
+        func see(_ label: String, at time: TimeInterval) {
+            _ = engine.receive(moment(label, .finished, at: time), presence: presence(), now: at(time))
+            _ = engine.click(now: at(time + 1))
+        }
+        // Ten agents finish over 45 minutes: all of them stay.
+        for index in 0..<10 { see("agent\(index)", at: Double(index) * 300) }
+        #expect(engine.history.count == 10)
+        #expect(engine.history.first?.agentLabel == "agent9")
+
+        // Half an hour later, moments more than an hour older than the newest go.
+        see("late", at: 4500)
+        #expect(engine.history.map(\.agentLabel) == ["late"] + (4...9).reversed().map { "agent\($0)" })
+
+        // After a long quiet spell, only the newest few are kept.
+        see("much later", at: 12_000)
+        #expect(engine.history.map(\.agentLabel) == ["much later", "late", "agent9"])
+    }
 }
 
 private extension Optional where Wrapped == AttentionEffect {

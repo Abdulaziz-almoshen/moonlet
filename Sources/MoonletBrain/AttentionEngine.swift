@@ -23,7 +23,8 @@ public struct AttentionConfig: Sendable, Equatable {
     public var skipWhenWatching = true
     /// Projects whose finished moments go quietly to the inbox instead of a card.
     public var batchedProjects: Set<String> = []
-    /// How many seen moments to keep for the summon view.
+    /// How many seen moments to keep for the summon view. Moments from the
+    /// last hour stay beyond it, so the view's timeline covers the whole hour.
     public var historyLimit = 20
 
     public init() {}
@@ -300,10 +301,21 @@ public struct AttentionEngine: Sendable {
         }
     }
 
+    /// Adds seen moments to the history. Past `historyLimit`, only moments
+    /// from the hour before the newest one stay, up to `hourLimit`. The hour
+    /// is measured from the moments themselves, so the engine never reads the clock.
     private mutating func remember(_ moments: [Moment]) {
         history.insert(contentsOf: moments.sorted { $0.createdAt > $1.createdAt }, at: 0)
-        if history.count > config.historyLimit { history.removeLast(history.count - config.historyLimit) }
+        guard history.count > config.historyLimit, let newest = history.map(\.createdAt).max() else { return }
+        history = history.enumerated()
+            .filter { $0.offset < config.historyLimit || newest.timeIntervalSince($0.element.createdAt) < 3600 }
+            .prefix(max(config.historyLimit, Self.hourLimit))
+            .map(\.element)
     }
+
+    /// The most moments the history keeps from the last hour, so a flood of
+    /// news can't grow it without end.
+    static let hourLimit = 500
 
     // MARK: - Card text
 

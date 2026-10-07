@@ -46,7 +46,7 @@ struct SummonNextUp: View {
             Button { open(agent.id) } label: {
                 HStack(spacing: 5) {
                     Text("Open in \(agent.place)")
-                    Text("↵").opacity(0.55)
+                    if live.takesKeys { Text("↵").opacity(0.55) }
                 }
             }
             .buttonStyle(SummonButtonStyle(prominent: true, tint: tint,
@@ -103,7 +103,8 @@ struct SummonNextUp: View {
     }
 }
 
-/// The other agents, one line each, with the number key that opens them.
+/// The other agents, one line each, with the number key that opens them when
+/// the panel has the keyboard.
 struct SummonRows: View {
     /// Each agent with its rank in the whole list, which sets its number key.
     var rows: [(rank: Int, agent: AgentRow)]
@@ -144,10 +145,12 @@ private struct SummonRow: View {
         let highlighted = live.hovered == agent.id
         Button { open(agent.id) } label: {
             HStack(spacing: 6) {
-                Text(rank < 9 ? "\(rank + 1)" : "")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 9)
+                if live.takesKeys {
+                    Text(rank < 9 ? "\(rank + 1)" : "")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 9)
+                }
                 Text(agent.label)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)

@@ -8,17 +8,28 @@ struct SummonTimeline: View {
     var events: [TimelineEvent]
     /// How many agents the number keys reach, for the hint.
     var agentCount: Int
+    /// Whether the panel has the keyboard; otherwise the hint says to click.
+    var takesKeys = true
     var now: Date
     @State private var hovered: UUID?
+    /// The whole row's width, which a tip may use beyond the line itself.
+    @State private var rowWidth: CGFloat = 0
 
     private static let height: CGFloat = 16
     private static let marker: CGFloat = 12
+    /// The widest a tip gets before it wraps onto a second line.
+    private static let tipWidth: CGFloat = 280
+    private static let row = "timeline"
 
     var body: some View {
         HStack(spacing: 8) {
             Text("1 h ago")
             GeometryReader { geometry in
                 let width = geometry.size.width
+                // How far a tip may reach past the line: over the labels on
+                // either side, up to the row's edges.
+                let line = geometry.frame(in: .named(Self.row))
+                let room = (leading: line.minX, trailing: max(0, rowWidth - line.maxX))
                 ZStack(alignment: .topLeading) {
                     Rectangle()
                         .fill(Color.primary.opacity(0.2))
@@ -33,7 +44,7 @@ struct SummonTimeline: View {
                             .position(x: x(of: event, width: width), y: Self.height / 2)
                     }
                     if let event = recent.first(where: { $0.id == hovered }) {
-                        tip(for: event, at: x(of: event, width: width), width: width)
+                        tip(for: event, at: x(of: event, width: width), width: width, room: room)
                     }
                 }
             }
@@ -47,6 +58,8 @@ struct SummonTimeline: View {
         .font(.system(size: 11))
         .foregroundStyle(.tertiary)
         .lineLimit(1)
+        .coordinateSpace(.named(Self.row))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
     }
 
     private var recent: [TimelineEvent] {
@@ -54,6 +67,7 @@ struct SummonTimeline: View {
     }
 
     private var hint: String {
+        guard takesKeys else { return "click an agent to open" }
         let reach = min(agentCount, 9)
         let keys = reach > 1 ? "1–\(reach) open · " : reach == 1 ? "1 open · " : ""
         return keys + "↵ next · esc"
@@ -66,23 +80,38 @@ struct SummonTimeline: View {
         return inset + (1 - sqrt(minutes / 60)) * (width - 2 * inset)
     }
 
-    /// What happened, floating above the marker and leaning away from the nearer edge.
-    private func tip(for event: TimelineEvent, at x: CGFloat, width: CGFloat) -> some View {
+    /// What happened, floating above the marker and leaning away from the
+    /// nearer edge. Past 280 points it wraps onto a second line, growing
+    /// upward, and it slides as far as it must to stay inside the row: over
+    /// the labels at either end, perhaps, but never past the panel.
+    private func tip(for event: TimelineEvent, at x: CGFloat, width: CGFloat,
+                     room: (leading: CGFloat, trailing: CGFloat)) -> some View {
         let leading = x < width / 2
+        let lean = Self.marker / 2
+        let start = -room.leading, end = width + room.trailing
+        // A box as wide as the widest tip, at the line's left end, that the
+        // tip hangs from: the box offers the width, the tip takes what it needs.
         return Color.clear
-            .frame(width: 1, height: 1)
-            .overlay(alignment: leading ? .bottomLeading : .bottomTrailing) {
+            .frame(width: Self.tipWidth, height: 1)
+            .overlay(alignment: .bottomLeading) {
                 Text("\(event.label) · \(SummonTime.ago(event.at, now: now))")
                     .font(.system(size: 11))
                     .foregroundStyle(.primary)
-                    .fixedSize()
+                    .lineLimit(2)
+                    // The middle goes first, so the time at the end stays.
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.background))
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
-                    .offset(x: leading ? -Self.marker / 2 : Self.marker / 2)
+                    .alignmentGuide(.leading) { tip in
+                        // The tip's left edge, inside the row whatever its width.
+                        let preferred = leading ? x - lean : x + lean - tip.width
+                        return -min(max(preferred, start), end - tip.width)
+                    }
             }
-            .position(x: x, y: -2)
+            .position(x: Self.tipWidth / 2, y: -2)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
