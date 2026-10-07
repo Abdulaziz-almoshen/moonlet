@@ -7,9 +7,9 @@
 <p align="center"><strong>Your agents report to your pointer.</strong></p>
 
 <p align="center">
-  <img src="docs/media/moonlet-demo.gif" width="880" alt="Demo: four coding agents in terminals; one finished and one waiting for a yes go unnoticed. With Moonlet, a tiny moon companion pops out of the pointer with each message: it holds up a sign for a permission request, celebrates a deploy, and is teary about a failure; a small circle shows every agent.">
+  <img src="docs/media/moonlet-companion-demo.gif" width="880" alt="Demo: four coding agents in terminals; one finished and one waiting for a yes go unnoticed. With Moonlet, a tiny moon companion pops out of the pointer with each message: it holds up a sign for a permission request, celebrates a deploy, and is teary about a failure; a small circle shows every agent.">
   <br>
-  <sub><a href="docs/media/moonlet-demo.mp4">Watch in full resolution</a></sub>
+  <sub><a href="docs/media/moonlet-companion-demo.mp4">Watch in full resolution</a></sub>
 </p>
 
 You run several AI coding agents at once. One finished ten minutes ago. Another has waited twenty minutes for a "yes". You only find out when you go looking.
