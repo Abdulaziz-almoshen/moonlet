@@ -52,19 +52,41 @@ enum DocsRenderer {
 
     static func sampleSummon() -> SummonContent {
         let now = Date()
+        func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
+        func event(_ minutes: Double, _ kind: MomentKind, _ label: String, _ detail: String) -> TimelineEvent {
+            TimelineEvent(id: UUID(), at: ago(minutes), kind: kind, mood: CompanionMood.read(kind: kind, detail: detail),
+                          label: "\(label) · \(detail)")
+        }
         return SummonContent(
             agents: [
-                AgentRow(id: "a", label: "landing-page", place: "Claude", activity: .waiting, progress: nil,
-                         status: "Needs permission to run npm install", since: now.addingTimeInterval(-240)),
-                AgentRow(id: "b", label: "db-migration", place: "Terminal", activity: .failed, progress: nil,
-                         status: "Staging DB refused connection", since: now.addingTimeInterval(-60)),
-                AgentRow(id: "c", label: "api-refactor", place: "iTerm", activity: .working, progress: 0.6,
-                         status: "Running tests", since: now.addingTimeInterval(-900)),
-                AgentRow(id: "d", label: "docs-site", place: "VS Code", activity: .done, progress: 1,
-                         status: "Changelog published", since: now.addingTimeInterval(-420)),
+                AgentRow(id: "a", label: "api-refactor", place: "iTerm", activity: .waiting, progress: 0.6,
+                         status: "Which database should the tests use? SQLite · Postgres", since: ago(6),
+                         mood: .curious, options: ["SQLite", "Postgres"], isNew: true),
+                AgentRow(id: "b", label: "infra", place: "Terminal", activity: .waiting, progress: 0.3,
+                         status: "Wants to run rm -rf build/", since: ago(1), mood: .nervous, isNew: true),
+                AgentRow(id: "c", label: "db-migration", place: "Terminal", activity: .failed, progress: 0.5,
+                         status: "Staging refused the connection", since: ago(2), mood: .teary, isNew: true),
+                AgentRow(id: "d", label: "landing-page", place: "Claude", activity: .working, progress: 0.67,
+                         status: "Installing packages", since: ago(12), etaMinutes: 4),
+                AgentRow(id: "e", label: "scraper", place: "iTerm", activity: .working, progress: 0.7,
+                         status: "Crawling page 140 of 200", since: ago(21), etaMinutes: 9),
+                AgentRow(id: "f", label: "web-app", place: "VS Code", activity: .done, progress: 1,
+                         status: "Deployed to production", since: ago(3), mood: .celebrate, isNew: true),
+                AgentRow(id: "g", label: "docs-site", place: "Terminal", activity: .done, progress: 1,
+                         status: "Fixed a typo in the README", since: ago(18), mood: .cheeky),
+                AgentRow(id: "h", label: "search-index", place: "Terminal", activity: .idle, progress: nil,
+                         status: "Ready for the next task", since: ago(40)),
             ],
-            earlier: [Moment(agentID: "e", agentLabel: "search-index", project: "search-index", kind: .finished,
-                             detail: "Reindexed 48k documents", createdAt: now.addingTimeInterval(-1800))])
+            events: [
+                event(52, .finished, "docs-site", "Fixed a typo in the README"),
+                event(41, .needsYou, "landing-page", "Wants to run npm install"),
+                event(34, .finished, "search-index", "Reindexed 48k documents, all 212 checks pass"),
+                event(25, .stuck, "scraper", "No news for 12 minutes"),
+                event(6, .question, "api-refactor", "Which database should the tests use?"),
+                event(3, .finished, "web-app", "Deployed to production"),
+                event(2, .failed, "db-migration", "Staging refused the connection"),
+                event(1, .needsYou, "infra", "Wants to run rm -rf build/"),
+            ])
     }
 
     // MARK: - Sheets
