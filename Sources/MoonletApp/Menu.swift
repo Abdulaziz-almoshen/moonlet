@@ -17,7 +17,7 @@ extension AppModel {
             menu.addItem(item)
         }
         menu.addItem(MenuItem("Show all agents", key: "m", modifiers: [.control, .option]) { [weak self] in
-            self?.openSummon(at: nil)
+            self?.openSummon(at: nil, takesKeys: true, by: "the menu")
         })
         menu.addItem(.separator())
 

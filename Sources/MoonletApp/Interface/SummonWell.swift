@@ -15,6 +15,9 @@ final class SummonLive: ObservableObject {
     @Published var isSettling = false
     /// False for the moment the panel opens, so the view can grow into place.
     @Published var isShown = true
+    /// Whether the panel has the keyboard, so the view offers number keys and
+    /// Return; opened by a circle, it is for the mouse only.
+    @Published var takesKeys = true
     /// The well's center on screen, kept by the panel; nil in still images.
     var wellOnScreen: CGPoint?
     let motion = WellMotion()
@@ -81,8 +84,10 @@ struct SummonWell: View {
             ZStack(alignment: .topLeading) {
                 Canvas { context, size in Self.draw(frame, in: &context, size: size) }
                 if let bubble = frame.bubble {
+                    // Kept inside the well: a 164-point bubble ends in the gap
+                    // before the column instead of running under its text.
                     SummonBubble(text: bubble.text, below: bubble.below)
-                        .position(x: min(max(bubble.anchor.x + Self.size / 2, Self.size / 2 - 10), Self.size + 30),
+                        .position(x: min(max(bubble.anchor.x + Self.size / 2, Self.size / 2 - 10), Self.size - 72),
                                   y: bubble.anchor.y + Self.size / 2)
                 }
             }
@@ -143,8 +148,8 @@ struct SummonWell: View {
     }
 }
 
-/// Words beside an agent the pointer rests on: above it, or below it near the
-/// top of the well, so they never cover the headline.
+/// Words beside an agent the pointer rests on: above it, or below it in the
+/// top part of the well, so they stay inside the well and off the headline.
 private struct SummonBubble: View {
     var text: String
     var below: Bool
@@ -158,6 +163,8 @@ private struct SummonBubble: View {
                 Text(text)
                     .font(.system(size: 11))
                     .foregroundStyle(.primary)
+                    .lineLimit(3)
+                    .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
@@ -310,7 +317,9 @@ final class WellMotion {
                     ? [agent.status, agent.when(now: date)].filter { !$0.isEmpty }.joined(separator: " · ")
                     : agent.words
                 let y = at.y + bob + jump
-                let below = y < -44
+                // Three lines rise about 45 points: above an agent higher than
+                // this they would leave the well, so they hang below it.
+                let below = y < -30
                 frame.bubble = (words.isEmpty ? agent.label : "\(agent.label): \(words)",
                                 CGPoint(x: at.x, y: below ? y + 16 : y - 16), below)
             }

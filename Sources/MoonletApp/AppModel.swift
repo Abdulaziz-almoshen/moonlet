@@ -36,6 +36,13 @@ final class AppModel {
     private(set) var pausedUntil: Date?
     private var turnStarted: [String: Date] = [:]
     private var outcomes: [String: String] = [:]
+    /// How each finished agent's outcome felt, read once when its summary is written.
+    private var moods: [String: CompanionMood] = [:]
+    /// Moods the summon view read from an agent's own words, with the words,
+    /// so each is read once rather than on every refresh.
+    private var readMoods: [String: (kind: MomentKind, words: String, mood: CompanionMood)] = [:]
+    /// The timeline's moods, by moment.
+    private var timelineMoods: [UUID: CompanionMood] = [:]
     private var cardShownAt: [UUID: Date] = [:]
     private var lastStuckCheck = Date.distantPast
     private var lastSummonContent: SummonContent?
@@ -77,7 +84,7 @@ final class AppModel {
     func start() throws {
         server.onEvent = { [weak self] event in await self?.receive(event) }
         server.onStatus = { [weak self] in await self?.store.agents ?? [] }
-        server.onSummon = { [weak self] in await self?.openSummon(at: nil) }
+        server.onSummon = { [weak self] in await self?.openSummon(at: nil, takesKeys: true, by: "moonlet summon") }
         try server.start()
         replaySpool()
 
@@ -179,6 +186,7 @@ final class AppModel {
                 let result = await summarize(summary ?? "")
                 pendingQuestions.remove(agent.id)
                 outcomes[agent.id] = result.text
+                moods[agent.id] = CompanionMood.read(kind: .finished, detail: String(result.text.prefix(500)))
                 var moment = moment(agent, result.kind == .question ? .question : .finished,
                                     result.text.isEmpty ? "Finished" : result.text)
                 // Only a quick task in the app in front counts as already watched.
@@ -399,7 +407,7 @@ final class AppModel {
             return
         }
         switch gestures.add(point, at: time, buttonsDown: buttonsDown) {
-        case .circle(let center): openSummon(at: center, by: "a circle")
+        case .circle(let center): openSummon(at: center, takesKeys: false, by: "a circle")
         case nil: break
         }
     }
@@ -420,7 +428,10 @@ final class AppModel {
         openAgent(id)
     }
 
-    func openSummon(at point: CGPoint?, by trigger: String = "the shortcut or menu") {
+    /// Opens the summon view at `point`, or at the pointer. It takes the
+    /// keyboard only when the user asked from the keyboard or the menu
+    /// (`takesKeys`); a circle opens it for the mouse alone.
+    func openSummon(at point: CGPoint?, takesKeys: Bool, by trigger: String) {
         AppLog.write(paths: paths, "Summon view opened by \(trigger)")
         apply(engine.summoned(now: Date()))
         companion.summonOpened()
@@ -428,27 +439,32 @@ final class AppModel {
         lastLookedAt = Date()
         let content = summonContent()
         lastSummonContent = content
-        summon.open(at: point ?? NSEvent.mouseLocation, content: content)
+        summon.open(at: point ?? NSEvent.mouseLocation, content: content, takesKeys: takesKeys)
         refresh()
     }
 
     func toggleSummon() {
-        if summon.isOpen { summon.close() } else { openSummon(at: nil) }
+        if summon.isOpen { summon.close() } else { openSummon(at: nil, takesKeys: true, by: "the shortcut") }
     }
 
     private func summonContent() -> SummonContent {
         let now = Date()
         let blocked = Set(engine.blockedAgents.map(\.agentID))
         let rank: [AgentActivity: Int] = [.waiting: 0, .failed: 1, .working: 2, .done: 3, .idle: 4]
+        let present = Set(store.agents.map(\.id))
+        readMoods = readMoods.filter { present.contains($0.key) }
+        moods = moods.filter { present.contains($0.key) }
         let rows = store.agents
             .filter { !$0.ended || $0.state.isFinished }
             .map { agent in
                 let activity = activity(of: agent, blocked: blocked)
-                let status = status(of: agent)
+                // A question's options show as tags, so the status keeps only the question.
+                let question = activity == .waiting ? SummonQuestion.split(agent.message ?? "") : nil
+                let status = question.map { TextTools.oneLine($0.question, max: 60) } ?? status(of: agent)
                 return AgentRow(id: agent.id, label: agent.label, place: Jump.placeName(for: agent),
                                 activity: activity, progress: agent.progress?.fraction, status: status,
                                 since: agent.stateChangedAt, mood: mood(of: agent, activity: activity),
-                                options: activity == .waiting ? Self.options(in: agent.message ?? "") : [],
+                                options: question?.options ?? [],
                                 etaMinutes: activity == .working ? eta(of: agent, now: now) : nil,
                                 isNew: activity != .working && activity != .idle && agent.stateChangedAt > lookedSince)
             }
@@ -461,20 +477,29 @@ final class AppModel {
     /// How an agent's latest words felt, for its face in the summon view.
     private func mood(of agent: Agent, activity: AgentActivity) -> CompanionMood? {
         switch activity {
-        case .waiting: CompanionMood.read(kind: .needsYou, detail: agent.message ?? "")
-        case .failed: CompanionMood.read(kind: .failed, detail: agent.message ?? "")
-        case .done: CompanionMood.read(kind: .finished, detail: outcomes[agent.id] ?? agent.summary ?? "")
-        case .working, .idle: nil
+        case .waiting:
+            // A request is never a question, whatever its command holds.
+            let mood = read(.needsYou, agent.message, for: agent.id)
+            return mood == .curious && SummonQuestion.isRequest(agent.message ?? "") ? .asking : mood
+        case .failed:
+            return read(.failed, agent.message, for: agent.id)
+        case .done:
+            // Read when the summary was written; until then, or for a finish
+            // replayed from before Moonlet started, from its own final words.
+            return moods[agent.id] ?? read(.finished, outcomes[agent.id] ?? agent.summary, for: agent.id)
+        case .working, .idle:
+            return nil
         }
     }
 
-    /// The choices in a question card's text, such as `Which database? SQLite · Postgres`.
-    static func options(in message: String) -> [String] {
-        guard let mark = message.firstIndex(of: "?") else { return [] }
-        return message[message.index(after: mark)...]
-            .split(separator: "·")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+    /// The mood of an agent's words, read again only when they change. Only
+    /// the first 500 characters count, so a long final message costs no more.
+    private func read(_ kind: MomentKind, _ text: String?, for id: String) -> CompanionMood {
+        let words = String((text ?? "").prefix(500))
+        if let kept = readMoods[id], kept.kind == kind, kept.words == words { return kept.mood }
+        let mood = CompanionMood.read(kind: kind, detail: words)
+        readMoods[id] = (kind, words, mood)
+        return mood
     }
 
     /// Minutes until a working agent is likely done, from how fast it has been
@@ -487,15 +512,20 @@ final class AppModel {
         return max(1, Int((elapsed * (1 - fraction) / fraction / 60).rounded()))
     }
 
-    /// The last hour of moments, oldest first.
+    /// The last hour of moments, oldest first. Each moment's mood is read once.
     private func timeline(now: Date) -> [TimelineEvent] {
         var seen = Set<UUID>()
         let moments = (engine.history + engine.queue.map(\.moment) + engine.inbox)
             .filter { now.timeIntervalSince($0.createdAt) < 3600 && seen.insert($0.id).inserted }
+        var moods: [UUID: CompanionMood] = [:]
+        for moment in moments {
+            moods[moment.id] = timelineMoods[moment.id]
+                ?? CompanionMood.read(kind: moment.kind, detail: String(moment.detail.prefix(500)))
+        }
+        timelineMoods = moods
         return moments
             .sorted { $0.createdAt < $1.createdAt }
-            .map { TimelineEvent(id: $0.id, at: $0.createdAt, kind: $0.kind,
-                                 mood: CompanionMood.read(kind: $0.kind, detail: $0.detail),
+            .map { TimelineEvent(id: $0.id, at: $0.createdAt, kind: $0.kind, mood: moods[$0.id] ?? .happy,
                                  label: "\($0.agentLabel) · \($0.detail)") }
     }
 

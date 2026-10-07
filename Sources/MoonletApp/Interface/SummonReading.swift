@@ -68,11 +68,15 @@ extension SummonContent {
 
 extension AgentRow {
     /// Whether the agent asked the user a question rather than for permission.
-    var asks: Bool { status.contains("?") || mood == .curious }
+    /// A request never counts, even with a `?` in its command or URL.
+    var asks: Bool {
+        guard !SummonQuestion.isRequest(status) else { return false }
+        return !options.isEmpty || status.contains("?") || mood == .curious
+    }
 
     /// The status without the question's options: `Which database should the tests use?`.
     var detail: String {
-        status.firstIndex(of: "?").map { String(status[...$0]) } ?? status
+        SummonQuestion.split(status)?.question ?? status
     }
 
     /// The detail cut to a glance, for the well's speech bubble.
@@ -145,6 +149,29 @@ extension AgentActivity {
         case .done: 3
         case .idle: 4
         }
+    }
+}
+
+/// A question that offers choices, as an agent's message carries them:
+/// `Which database should the tests use? SQLite · Postgres`.
+enum SummonQuestion {
+    /// The question and its options, split at the last `?` before the first
+    /// ` · `. Nil unless the message lists options that way, and always nil
+    /// for a request, so a `?` in a command, a URL, or a glob never makes one.
+    static func split(_ message: String) -> (question: String, options: [String])? {
+        guard !isRequest(message), let list = message.range(of: " · "),
+              let mark = message[..<list.lowerBound].lastIndex(of: "?") else { return nil }
+        let options = message[message.index(after: mark)...]
+            .components(separatedBy: " · ")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return (String(message[...mark]), options)
+    }
+
+    /// Whether the message asks for permission, such as `Wants to run npm install`,
+    /// which is never a question.
+    static func isRequest(_ message: String) -> Bool {
+        message.hasPrefix("Wants to")
     }
 }
 
