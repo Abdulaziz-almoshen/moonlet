@@ -19,8 +19,10 @@ Moonlet is one Swift package with five libraries, one command-line tool, and one
         │  AttentionEngine     signals + presence → card effects (MoonletBrain)
         │  PointerPolicy       who's talking → pointer tint      (MoonletBrain)
         │  GestureRecognizer   pointer samples → summon          (MoonletBrain)
+        │  CompanionMood       a card's kind and words → a mood  (MoonletBrain)
+        │  CompanionDirector   cards → the companion's performance, card placement
         ▼
-   CardPanel · PointerSkin · SummonPanel · StatusMoon
+   CompanionPanel · CardPanel · PointerSkin · SummonPanel · StatusMoon
 ```
 
 ## Modules
@@ -31,11 +33,13 @@ Moonlet is one Swift package with five libraries, one command-line tool, and one
 | `MoonletIPC` | Unix-socket server and client, the spool, and paths | Core |
 | `MoonletAdapters` | Claude Code hook payloads and Codex notify payloads to events | Core |
 | `MoonletSetup` | Installers for Claude Code and Codex that preserve key order and comments | Core |
-| `MoonletBrain` | Attention rules, presence policy, gestures, pointer policy, question and stuck detection, learning, summary parsing | Foundation, CoreGraphics |
+| `MoonletBrain` | Attention rules, presence policy, gestures, pointer policy, the companion's mood reading, question and stuck detection, learning, summary parsing | Foundation, CoreGraphics |
 | `moonlet` | The command: hooks, `emit`, `status`, `summon`, `demo`, `install`, `doctor` | All libraries except Brain |
-| `MoonletApp` | The menu bar app: sensing, pointer skin, cards, summon view, local model client | Core, IPC, Brain |
+| `MoonletApp` | The menu bar app: sensing, pointer skin, the companion (art, behaviors, director), cards, summon view, local model client | Core, IPC, Brain |
 
-Everything that decides *what happens* lives in value types with no clock and no I/O (`AgentStore`, `AttentionEngine`, `PointerPolicy`, `GestureRecognizer`, `StuckDetector`, `EngagementTracker`), so it's covered by fast unit tests. The app layer only senses, renders, and wires.
+Everything that decides *what happens* lives in value types with no clock and no I/O (`AgentStore`, `AttentionEngine`, `PointerPolicy`, `GestureRecognizer`, `CompanionMood`, `StuckDetector`, `EngagementTracker`), so it's covered by fast unit tests. The app layer only senses, renders, and wires.
+
+The companion is drawn with Core Graphics from a `CompanionPose` (face, look, arms, props), so the same art serves the live companion, the summon view, the docs images, and the demo film. `CompanionDirector` owns the animation: a 60 Hz timer while the companion is out and none otherwise.
 
 ## Threading
 
@@ -59,7 +63,7 @@ Hiding and showing go through the public `CGDisplayHideCursor` and `CGDisplaySho
 
 The pointer skin must never get between the user and their apps. `AppModel` checks two things while it draws:
 
-- **Interception.** Moonlet's click-through windows should never receive an event. If the skin or card window gets a click or scroll, the skin turns itself off.
+- **Interception.** Moonlet's click-through windows should never receive an event. If the skin, companion, or card window gets a click or scroll, the skin turns itself off. The one exception is a request card while it's parked: it takes clicks on purpose, to open the agent, and goes back to click-through as soon as it leaves.
 - **Delivery.** Every hardware click and scroll (from `CGEventSource`) should reach some app, which Moonlet sees through its global and local event monitors. Two undelivered presses within 15 seconds turn the skin off.
 
 Either way the reason appears in the menu and in `~/Library/Logs/Moonlet/app.log`, which also records once a minute how many presses reached apps while the pointer showed.

@@ -8,14 +8,14 @@ import SwiftUI
 ///     swift run MoonletApp --render-film /tmp/moonlet-frames
 ///
 /// `scripts/make-demo.sh` encodes the frames as MP4 and GIF. The film shows the
-/// pain first (agents finish or wait unnoticed), then how Moonlet speaks through
-/// the pointer.
+/// pain first (agents finish or wait unnoticed), then how Moonlet's companion
+/// brings each piece of news to the pointer, in the mood of what was said.
 @MainActor
 enum DemoFilm {
     static let size = CGSize(width: 1280, height: 800)
     static let scale: CGFloat = 1.5
     static let fps = 30
-    static let duration: Double = 24
+    static let duration: Double = 26
     /// Moonlet's pointer and cards are drawn larger than life so they read in a small GIF.
     static let zoom: CGFloat = 1.6
 
@@ -64,23 +64,25 @@ enum DemoFilm {
     private enum Timeline {
         static let moonlet = 8.2
         static let ask = 9.6
+        static let park = 10.3
         static let click = 12.0
-        static let tell = 12.8
-        static let tellEnd = 15.4
-        static let warn = 15.8
-        static let warnEnd = 18.2
-        static let circle = 18.5
-        static let summon = 19.4
-        static let endCard = 21.6
+        static let tell = 12.9
+        static let tellEnd = 15.6
+        static let warn = 16.0
+        static let warnEnd = 18.6
+        static let circle = 18.9
+        static let summon = 19.8
+        static let endCard = 23.0
     }
 
     /// The pointer's path: (time, position) keyframes, eased between.
     private static let path: [(Double, CGPoint)] = [
         (0.0, CGPoint(x: 640, y: 430)), (1.4, CGPoint(x: 360, y: 205)), (2.8, CGPoint(x: 330, y: 245)),
         (4.4, CGPoint(x: 930, y: 215)), (5.8, CGPoint(x: 380, y: 560)), (7.0, CGPoint(x: 960, y: 560)),
-        (8.2, CGPoint(x: 640, y: 440)), (9.6, CGPoint(x: 600, y: 410)), (11.6, CGPoint(x: 618, y: 418)),
-        (12.8, CGPoint(x: 560, y: 350)), (15.4, CGPoint(x: 572, y: 356)), (15.8, CGPoint(x: 600, y: 380)),
-        (18.2, CGPoint(x: 590, y: 386)), (18.5, CGPoint(x: 598, y: 380)),
+        (8.2, CGPoint(x: 640, y: 440)), (9.6, CGPoint(x: 560, y: 410)), (10.6, CGPoint(x: 548, y: 404)),
+        (11.7, CGPoint(x: 700, y: 400)), (12.0, CGPoint(x: 700, y: 400)),
+        (12.9, CGPoint(x: 560, y: 350)), (15.6, CGPoint(x: 572, y: 356)), (16.0, CGPoint(x: 600, y: 380)),
+        (18.6, CGPoint(x: 590, y: 386)), (18.9, CGPoint(x: 598, y: 380)),
     ]
 
     private static let circleCenter = CGPoint(x: 560, y: 380)
@@ -105,8 +107,8 @@ enum DemoFilm {
     /// Who is talking at time `t`: the card at the pointer, and its tint.
     private static func talk(at t: Double) -> (card: String?, tint: PointerTint) {
         if t >= Timeline.ask, t < Timeline.click { return ("ask", .needsYou) }
-        if t >= Timeline.tell, t < Timeline.tellEnd { return ("tell", .info) }
-        if t >= Timeline.warn, t < Timeline.warnEnd { return ("warn", .problem) }
+        if t >= Timeline.tell, t < Timeline.tellEnd - 0.5 { return ("tell", .info) }
+        if t >= Timeline.warn, t < Timeline.warnEnd - 0.5 { return ("warn", .problem) }
         return (nil, .system)
     }
 
@@ -114,12 +116,97 @@ enum DemoFilm {
         (0.3, 3.4, "Five agents are working for you."),
         (3.6, 6.4, "One finished 10 minutes ago. One has waited 18 minutes for a yes."),
         (6.6, 8.0, "You only find out when you go looking."),
-        (8.3, 9.5, "Moonlet: your agents report to your pointer."),
-        (9.6, 12.0, "Asks you something? Your pointer turns yellow."),
-        (12.8, 15.4, "Tells you something? Blue."),
-        (15.8, 18.2, "Something went wrong? Red."),
-        (18.5, 21.3, "Draw a small circle to see every agent."),
+        (8.3, 9.5, "Moonlet: a tiny companion brings their news to your pointer."),
+        (9.6, 12.8, "Asks you something? It holds up a sign and waits for you."),
+        (12.9, 15.6, "Shipped? It celebrates."),
+        (16.0, 18.6, "Something failed? It's sad with you."),
+        (18.9, 22.7, "Draw a small circle to see every agent."),
     ]
+
+    // MARK: - The companion
+
+    /// Where the companion sits at `t`: just below and right of the pointer, a
+    /// beat behind it; parked on the card's corner while it waits for an answer.
+    private static func companionCenter(at t: Double) -> CGPoint {
+        let time = t >= Timeline.park && t < Timeline.tell ? Timeline.park : t
+        let lagged = pointer(at: max(0, time - 0.1))
+        return CGPoint(x: lagged.x + 17 * zoom, y: lagged.y + 24 * zoom)
+    }
+
+    /// Where the card's image goes for a companion at `point`: its visible box
+    /// starts right of the companion and a little above it.
+    private static func cardOrigin(companion point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x + 12 * zoom, y: point.y - 30 * zoom)
+    }
+
+    /// The companion's look at `t`, scripted like the app's director plays it:
+    /// an entrance, a few moves, and a goodbye.
+    private static func companionPose(at t: Double) -> (pose: CompanionPose, grow: CGFloat, alpha: CGFloat)? {
+        let pi = Double.pi
+        var pose = CompanionPose()
+        let at = pointer(at: t), center = companionCenter(at: t)
+        let dx = at.x - center.x, dy = at.y - center.y, d = max(1, hypot(dx, dy))
+        pose.look = CGVector(dx: dx / d, dy: dy / d)
+        pose.lid = (t.truncatingRemainder(dividingBy: 3.1) < 0.12) ? 0.12 : 1
+        func scene(_ start: Double, _ end: Double) -> (local: Double, grow: CGFloat, alpha: CGFloat) {
+            let local = t - start
+            let grow = CGFloat(Ease.backOut(local / 0.45))
+            let fade = CGFloat(max(0, min(1, (end - t) / 0.3)))
+            return (local, local < 0.45 ? grow : fade, min(1, CGFloat(local / 0.25)) * fade)
+        }
+        if t >= Timeline.ask, t < Timeline.tell {
+            let (local, grow, alpha) = scene(Timeline.ask, Timeline.tell)
+            pose.expression = .asking
+            pose.props = [CompanionProp(kind: .sign("?"), progress: local * 0.25)]
+            if local < 0.9 { pose.armRight = -150 * CGFloat(sin(min(1, local / 0.9 * 1.4) * pi / 2)) }
+            if t > 11.3, t < 11.8 { pose.offset.y -= CGFloat(sin((t - 11.3) / 0.5 * pi) * 5); pose.blush = 1.3 }
+            if t >= Timeline.click {
+                let thanks = t - Timeline.click
+                pose.expression = .smitten
+                pose.props = [CompanionProp(kind: .heart, progress: min(1, thanks / 0.8))]
+                pose.offset.y -= CGFloat(sin(min(1, thanks / 0.6) * pi) * 5)
+            }
+            return (pose, grow, alpha)
+        }
+        if t >= Timeline.tell, t < Timeline.tellEnd {
+            let (local, grow, alpha) = scene(Timeline.tell, Timeline.tellEnd)
+            pose.expression = .starry
+            pose.props = [CompanionProp(kind: .hat, progress: 0)]
+            if local < 1.3 {
+                let p = local / 1.3
+                pose.rotation = CGFloat(Ease.inOut(p) * 360)
+                pose.offset.y -= CGFloat(sin(p * pi) * 7)
+                pose.props.append(CompanionProp(kind: .confetti, progress: p))
+            } else if local < 2.0 {
+                let p = (local - 1.3) / 0.7
+                pose.expression = .delighted
+                pose.offset.y -= CGFloat(sin(p * pi) * 5)
+            } else {
+                pose.expression = .delighted
+                pose.armRight = -125 + CGFloat(sin(local * 30) * 30)
+            }
+            return (pose, grow, alpha)
+        }
+        if t >= Timeline.warn, t < Timeline.warnEnd {
+            let (local, grow, alpha) = scene(Timeline.warn, Timeline.warnEnd)
+            pose.expression = .teary
+            pose.props = [CompanionProp(kind: .tear, progress: (local * 0.55).truncatingRemainder(dividingBy: 1)),
+                          CompanionProp(kind: .cloud, progress: (local * 0.25).truncatingRemainder(dividingBy: 1))]
+            pose.offset.y += CGFloat(min(1, local * 2) * 1.6)
+            pose.squash = 1 - CGFloat(sin(local * pi * 2) * 0.03)
+            return (pose, grow, alpha)
+        }
+        return nil
+    }
+
+    private static func drawCompanion(at t: Double) {
+        guard let (pose, grow, alpha) = companionPose(at: t), alpha > 0.01,
+              let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        context.setAlpha(alpha)
+        CompanionArt.draw(pose, in: context, center: companionCenter(at: t), scale: CompanionDirector.scale * zoom * max(0.01, grow), flipped: true)
+        context.restoreGState()
+    }
 
     // MARK: - Desktop
 
@@ -166,9 +253,10 @@ enum DemoFilm {
         if let key = talk.card, let card = assets.cards[key] {
             let start: Double = key == "ask" ? Timeline.ask : key == "tell" ? Timeline.tell : Timeline.warn
             let alpha = min((t - start) / 0.18, 1)
-            drawImage(card.image, at: CGPoint(x: at.x + 12 * zoom, y: at.y + 20 * zoom),
+            drawImage(card.image, at: cardOrigin(companion: companionCenter(at: t)),
                       size: CGSize(width: card.size.width * zoom, height: card.size.height * zoom), alpha: alpha)
         }
+        drawCompanion(at: t)
         if t >= Timeline.click, t < Timeline.click + 0.5 {
             let progress = (t - Timeline.click) / 0.5
             let radius = (6 + 22 * progress) * zoom
@@ -369,17 +457,17 @@ enum DemoFilm {
             for tint in [PointerTint.info, .needsYou, .problem] {
                 pointers[tint] = tint.color.flatMap { PointerArtwork.image(color: $0, points: 42, scale: 3) }
             }
-            let samples: [(String, MomentKind, String, String)] = [
-                ("ask", .needsYou, "landing-page", "Wants to run npm install"),
-                ("tell", .finished, "api-refactor", "Pagination shipped, 14 tests pass"),
-                ("warn", .failed, "db-migration", "Staging DB refused connection"),
+            let samples: [(String, MomentKind, String, String, String?)] = [
+                ("ask", .needsYou, "landing-page", "Wants to run npm install", "Open in Terminal"),
+                ("tell", .finished, "web-app", "Deployed to production", nil),
+                ("warn", .failed, "db-migration", "Staging DB refused connection", nil),
             ]
             let now = Date()
-            for (key, kind, label, detail) in samples {
+            for (key, kind, label, detail, hint) in samples {
                 var engine = AttentionEngine()
                 let moment = Moment(agentID: "film:\(label)", agentLabel: label, project: label, kind: kind, detail: detail, createdAt: now)
                 for case .show(let card) in engine.receive(moment, presence: PresenceSnapshot(secondsSinceInput: 0.5, secondsSinceKey: 60), now: now) {
-                    if let image = Self.snapshot(CardView(card: card)) {
+                    if let image = Self.snapshot(CardView(card: card, hint: hint)) {
                         cards[key] = (image, CGSize(width: CGFloat(image.width) / 3, height: CGFloat(image.height) / 3))
                     }
                 }

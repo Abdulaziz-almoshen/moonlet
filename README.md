@@ -7,27 +7,32 @@
 <p align="center"><strong>Your agents report to your pointer.</strong></p>
 
 <p align="center">
-  <img src="docs/media/moonlet-demo.gif" width="880" alt="Demo: four coding agents in terminals; one finished and one waiting for a yes go unnoticed. With Moonlet, the pointer turns yellow with a card when an agent asks something, blue when one finishes, red when one fails, and a small circle shows every agent.">
+  <img src="docs/media/moonlet-demo.gif" width="880" alt="Demo: four coding agents in terminals; one finished and one waiting for a yes go unnoticed. With Moonlet, a tiny moon companion pops out of the pointer with each message: it holds up a sign for a permission request, celebrates a deploy, and is teary about a failure; a small circle shows every agent.">
   <br>
   <sub><a href="docs/media/moonlet-demo.mp4">Watch in full resolution</a></sub>
 </p>
 
 You run several AI coding agents at once. One finished ten minutes ago. Another has waited twenty minutes for a "yes". You only find out when you go looking.
 
-Moonlet stays out of sight while your agents work. When one has something to say, your pointer says it, right where you're already looking.
+Moonlet stays out of sight while your agents work. When one has something to say, a tiny moon pops out of your pointer with the message, right where you're already looking, and makes a face that fits what was said. Once you've seen it, or answered it, it fades away.
 
 <p align="center">
-  <img src="docs/images/pointer-states.png" width="300" alt="The Moonlet pointer in blue, yellow, and red, on light and dark backgrounds">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/companion-moods-dark.png">
+    <img src="docs/images/companion-moods-light.png" width="760" alt="The companion's moods: celebrating a deploy, proud of passing tests, cheeky about a typo fix, asking with a sign, nervous about rm -rf, teary about a failure, sleepy at a rate limit">
+  </picture>
 </p>
 
-| Your pointer | Means |
-| --- | --- |
-| **Blue** | An agent tells you something, such as "I'm done" |
-| **Yellow** | An agent asks you something: a question or a permission |
-| **Red** | Something went wrong |
-| Normal arrow | Agents are working; nothing needs you |
+| The agent says | The companion | Your pointer |
+| --- | --- | --- |
+| "Deployed to production" | Starry eyes, a party hat, confetti | **Blue** |
+| "All 14 tests pass" · "Fixed a typo" | Proud · a cheeky wink | **Blue** |
+| "Wants to run npm install" · a question | Holds up a **?** sign and waits for you | **Yellow** |
+| "Wants to run rm -rf build/" | Nervous, holding a **!** sign | **Yellow** |
+| "Staging refused the connection" | Teary, under a little rain cloud | **Red** |
+| Nothing: agents are working | Not there at all | Normal arrow |
 
-A card at the pointer says it in a few words, such as `Wants to run npm install` or `Pagination shipped, 14 tests pass`. A small model on your Mac writes them. Cards wait for a pause in your typing, hold during calls, and leave on their own. Draw a small circle with your pointer, or press <kbd>⌃⌥M</kbd>, to see every agent at once.
+A card beside it says it in a few words, written by a small model on your Mac. A request card stops and waits in place, so you can click it to jump to the agent instead of chasing it. Everything waits for a pause in your typing, holds during calls, and leaves on its own. Draw a small circle with your pointer, or press <kbd>⌃⌥M</kbd>, to see every agent at once: the ones that need you sit closest to the middle.
 
 ## Install
 
